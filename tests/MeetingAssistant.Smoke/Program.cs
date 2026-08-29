@@ -139,6 +139,53 @@ try
             failures.Add("OpenAI connection timeout should return promptly");
     }
 
+    var updateTestDirectory = Path.Combine(Path.GetTempPath(), $"meeting-assistant-update-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(updateTestDirectory);
+    string? downloadedUpdatePath = null;
+    try
+    {
+        await File.WriteAllTextAsync(
+            Path.Combine(updateTestDirectory, UpdateChannelConfiguration.ConfigFileName),
+            "{\"enabled\":true,\"owner\":\"test-owner\",\"repository\":\"test-repo\",\"assetName\":\"MeetingAssistant-Setup.exe\"}");
+
+        using var updateHttpClient = new HttpClient(new FakeGitHubUpdateHandler());
+        using var updateService = new UpdateChannelService(
+            new UpdateChannelConfiguration(updateTestDirectory),
+            httpClient: updateHttpClient,
+            currentVersion: new SemanticVersion(1, 0, 0),
+            checkTimeout: TimeSpan.FromMilliseconds(250));
+        var updateCheck = await updateService.CheckAsync();
+        if (updateCheck.Status != UpdateCheckStatus.UpdateAvailable || updateCheck.Update?.Version.ToString() != "1.0.1")
+            failures.Add($"update service should detect a newer GitHub release asset (status: {updateCheck.Status}, message: {updateCheck.Message})");
+
+        if (updateCheck.Update is not null)
+        {
+            var download = await updateService.DownloadAsync(updateCheck.Update);
+            downloadedUpdatePath = download.InstallerPath;
+            if (!download.Success || string.IsNullOrWhiteSpace(download.InstallerPath) || !File.Exists(download.InstallerPath))
+                failures.Add("update service should download the configured installer asset");
+        }
+
+        using var hangingUpdateHttpClient = new HttpClient(new HangingGitHubUpdateHandler());
+        using var hangingUpdateService = new UpdateChannelService(
+            new UpdateChannelConfiguration(updateTestDirectory),
+            httpClient: hangingUpdateHttpClient,
+            currentVersion: new SemanticVersion(1, 0, 0),
+            checkTimeout: TimeSpan.FromMilliseconds(50));
+        var updateStartedAt = DateTime.UtcNow;
+        var hangingUpdate = await hangingUpdateService.CheckAsync();
+        if (hangingUpdate.Status != UpdateCheckStatus.Failed || !hangingUpdate.Message.Contains("too long", StringComparison.OrdinalIgnoreCase))
+            failures.Add("update service should report a timeout when GitHub hangs");
+        if (DateTime.UtcNow - updateStartedAt > TimeSpan.FromSeconds(2))
+            failures.Add("GitHub update timeout should return promptly");
+    }
+    finally
+    {
+        if (!string.IsNullOrWhiteSpace(downloadedUpdatePath) && File.Exists(downloadedUpdatePath))
+            File.Delete(downloadedUpdatePath);
+        if (Directory.Exists(updateTestDirectory)) Directory.Delete(updateTestDirectory, recursive: true);
+    }
+
     using var capture = new WindowsAudioCaptureService();
     Console.WriteLine("capture start...");
     await capture.StartAsync(new AudioConfiguration { Title = "Capture smoke test" });
@@ -165,7 +212,7 @@ if (failures.Count > 0)
     return 1;
 }
 
-Console.WriteLine("Smoke checks passed: auth state, audio setup, WASAPI/fallback capture, processing, transcript, speakers, summary, and progress.");
+Console.WriteLine("Smoke checks passed: auth state, audio setup, WASAPI/fallback capture, processing, transcript, speakers, summary, progress, and GitHub updates.");
 return 0;
 
 sealed class FakeOpenAiHandler : HttpMessageHandler
@@ -207,6 +254,53 @@ sealed class FakeOpenAiHandler : HttpMessageHandler
 }
 
 sealed class HangingOpenAiHandler : HttpMessageHandler
+{
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        return new HttpResponseMessage(HttpStatusCode.OK);
+    }
+}
+
+sealed class FakeGitHubUpdateHandler : HttpMessageHandler
+{
+    private static readonly byte[] InstallerBytes = Encoding.UTF8.GetBytes("fake Meeting Assistant installer");
+
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        if (request.RequestUri?.AbsolutePath == "/repos/test-owner/test-repo/releases/latest")
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                tag_name = "v1.0.1",
+                name = "Meeting Assistant 1.0.1",
+                html_url = "https://github.com/test-owner/test-repo/releases/tag/v1.0.1",
+                draft = false,
+                prerelease = false,
+                published_at = DateTimeOffset.UtcNow,
+                assets = new[]
+                {
+                    new
+                    {
+                        name = "MeetingAssistant-Setup.exe",
+                        browser_download_url = "https://github.com/test-owner/test-repo/releases/download/v1.0.1/MeetingAssistant-Setup.exe"
+                    }
+                }
+            });
+            return Task.FromResult(JsonResponse(HttpStatusCode.OK, payload));
+        }
+
+        if (request.RequestUri?.AbsolutePath == "/test-owner/test-repo/releases/download/v1.0.1/MeetingAssistant-Setup.exe")
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(InstallerBytes) });
+
+        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+    }
+
+    private static HttpResponseMessage JsonResponse(HttpStatusCode statusCode, string json)
+        => new(statusCode) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+}
+
+sealed class HangingGitHubUpdateHandler : HttpMessageHandler
 {
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Net.Http;
+using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
 using MeetingAssistant.Models;
@@ -57,9 +58,12 @@ public sealed class MainViewModel : ViewModelBase
     private readonly UserPreferences _savedPreferences;
     private readonly OpenAiConfiguration _openAi;
     private readonly OpenAiMeetingIntelligenceService _openAiIntelligence;
+    private readonly IUpdateChannelService _updates;
     private readonly DispatcherTimer _recordingTimer;
     private CancellationTokenSource? _processingCancellation;
+    private CancellationTokenSource? _updateCheckCancellation;
     private RecordingData? _lastRecording;
+    private AppUpdateInfo? _availableUpdate;
     private WorkspaceView _currentView = WorkspaceView.Auth;
     private UserSession? _currentUser;
     private Meeting? _currentMeeting;
@@ -88,6 +92,7 @@ public sealed class MainViewModel : ViewModelBase
     private string _openAiTranscriptionModel = OpenAiConfiguration.DefaultTranscriptionModel;
     private string _openAiSummaryModel = OpenAiConfiguration.DefaultSummaryModel;
     private string _openAiConnectionStatus = "Not tested yet";
+    private string _updateStatus = "Updates are not configured for this build.";
     private double _microphoneLevel;
     private double _systemAudioLevel;
     private int _processingPercent;
@@ -107,6 +112,8 @@ public sealed class MainViewModel : ViewModelBase
     private bool _syncPaused;
     private bool _startOnLogin = true;
     private bool _isTestingOpenAi;
+    private bool _isCheckingForUpdates;
+    private bool _isInstallingUpdate;
 
     public MainViewModel(AppServices services)
     {
@@ -121,6 +128,10 @@ public sealed class MainViewModel : ViewModelBase
         _savedPreferences = _preferences.Load();
         _openAi = services.OpenAiConfiguration;
         _openAiIntelligence = services.OpenAiIntelligence;
+        _updates = services.UpdateService;
+        _updateStatus = _updates.Configuration.IsConfigured
+            ? "Updates are ready to check."
+            : "Updates are not configured for this build.";
         _selectedTheme = ThemeService.Parse(_savedPreferences.Theme).ToString();
         _selectedLanguage = string.Equals(_savedPreferences.Language, "en", StringComparison.OrdinalIgnoreCase) ? "English" : "Tiếng Việt";
         _retentionOption = _savedPreferences.RetentionOption;
@@ -175,6 +186,8 @@ public sealed class MainViewModel : ViewModelBase
         SaveSettingsCommand = new AsyncRelayCommand(SaveSettingsAsync);
         ClearSearchCommand = new RelayCommand(_ => SearchQuery = string.Empty, _ => HasSearchQuery);
         TestOpenAiCommand = new AsyncRelayCommand(TestOpenAiAsync, () => !IsTestingOpenAi);
+        CheckForUpdatesCommand = new AsyncRelayCommand(CheckForUpdatesAsync, () => !IsCheckingForUpdates && !IsInstallingUpdate);
+        InstallUpdateCommand = new AsyncRelayCommand(InstallUpdateAsync, () => HasAvailableUpdate && !IsCheckingForUpdates && !IsInstallingUpdate);
     }
 
     public ObservableCollection<Meeting> Meetings { get; }
@@ -213,6 +226,8 @@ public sealed class MainViewModel : ViewModelBase
     public AsyncRelayCommand SaveSettingsCommand { get; }
     public RelayCommand ClearSearchCommand { get; }
     public AsyncRelayCommand TestOpenAiCommand { get; }
+    public AsyncRelayCommand CheckForUpdatesCommand { get; }
+    public AsyncRelayCommand InstallUpdateCommand { get; }
 
     public WorkspaceView CurrentView
     {
@@ -434,6 +449,30 @@ public sealed class MainViewModel : ViewModelBase
             TestOpenAiCommand.RaiseCanExecuteChanged();
         }
     }
+    public string AppVersionLabel => $"v{_updates.CurrentVersion}";
+    public string UpdateChannelLabel => LocalizationService.Translate(_updates.Configuration.IsConfigured ? "GitHub Releases" : "Not configured");
+    public string UpdateStatus { get => LocalizationService.Translate(_updateStatus); private set => SetProperty(ref _updateStatus, value); }
+    public bool HasAvailableUpdate => _availableUpdate is not null;
+    public bool IsCheckingForUpdates
+    {
+        get => _isCheckingForUpdates;
+        private set
+        {
+            if (!SetProperty(ref _isCheckingForUpdates, value)) return;
+            CheckForUpdatesCommand.RaiseCanExecuteChanged();
+            InstallUpdateCommand.RaiseCanExecuteChanged();
+        }
+    }
+    public bool IsInstallingUpdate
+    {
+        get => _isInstallingUpdate;
+        private set
+        {
+            if (!SetProperty(ref _isInstallingUpdate, value)) return;
+            CheckForUpdatesCommand.RaiseCanExecuteChanged();
+            InstallUpdateCommand.RaiseCanExecuteChanged();
+        }
+    }
     public bool StartOnLogin { get => _startOnLogin; set => SetProperty(ref _startOnLogin, value); }
     public string SettingsSyncDescription => LocalizationService.Translate(SyncPaused ? "Meetings stay on this device until you turn sync back on." : "Cloud sync will run in the background when Firebase is connected.");
     public string HotkeyStatus => LocalizationService.Translate(_hotkey.IsRegistered ? "Registered · Ctrl + Shift + R" : "Unavailable · another app may own this shortcut");
@@ -487,6 +526,7 @@ public sealed class MainViewModel : ViewModelBase
         IsAuthenticated = true;
         CurrentView = WorkspaceView.Dashboard;
         await LoadMeetingsAsync();
+        _ = CheckForUpdatesAsync(silent: true);
     }
 
     public void RefreshSystemStatus()
@@ -503,7 +543,8 @@ public sealed class MainViewModel : ViewModelBase
             nameof(RecordingStatus), nameof(ActiveSpeaker), nameof(RecordingIndicatorLabel), nameof(CaptureProvider),
             nameof(CurrentMeetingTitle), nameof(ProcessingStage), nameof(ProcessingMessage), nameof(SettingsSyncDescription),
             nameof(HotkeyStatus), nameof(ToastMessage), nameof(LastSyncLabel), nameof(PageTitle), nameof(PageDescription),
-            nameof(OpenAiKeyStatus), nameof(OpenAiConnectionStatus), nameof(OpenAiProviderLabel)
+            nameof(OpenAiKeyStatus), nameof(OpenAiConnectionStatus), nameof(OpenAiProviderLabel), nameof(UpdateChannelLabel),
+            nameof(UpdateStatus)
         })
         {
             OnPropertyChanged(propertyName);
@@ -570,6 +611,7 @@ public sealed class MainViewModel : ViewModelBase
         IsAuthenticated = true;
         CurrentView = WorkspaceView.Dashboard;
         await LoadMeetingsAsync();
+        _ = CheckForUpdatesAsync(silent: true);
         ToastMessage = session.IsOffline ? "Offline workspace ready · your meetings are stored locally" : "Workspace ready · your session is secure";
     }
 
@@ -973,6 +1015,74 @@ public sealed class MainViewModel : ViewModelBase
         }
     }
 
+    private Task CheckForUpdatesAsync() => CheckForUpdatesAsync(silent: false);
+
+    private async Task CheckForUpdatesAsync(bool silent)
+    {
+        if (IsCheckingForUpdates || IsInstallingUpdate) return;
+
+        IsCheckingForUpdates = true;
+        if (!silent) UpdateStatus = "Checking for updates...";
+        var cancellation = new CancellationTokenSource();
+        _updateCheckCancellation = cancellation;
+        try
+        {
+            var result = await _updates.CheckAsync(cancellation.Token);
+            _availableUpdate = result.Update;
+            OnPropertyChanged(nameof(HasAvailableUpdate));
+            InstallUpdateCommand.RaiseCanExecuteChanged();
+            UpdateStatus = result.Status == UpdateCheckStatus.UpdateAvailable && result.Update is not null
+                ? $"{LocalizationService.Translate("Update available")}: v{result.Update.Version}"
+                : result.Message;
+            if (!silent && result.Status == UpdateCheckStatus.UpdateAvailable)
+                ToastMessage = result.Message;
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            // The window can close while a background update check is in flight.
+        }
+        catch (Exception)
+        {
+            _availableUpdate = null;
+            OnPropertyChanged(nameof(HasAvailableUpdate));
+            InstallUpdateCommand.RaiseCanExecuteChanged();
+            UpdateStatus = "Could not check for updates. Check your network and try again.";
+        }
+        finally
+        {
+            if (ReferenceEquals(_updateCheckCancellation, cancellation))
+                _updateCheckCancellation = null;
+            cancellation.Dispose();
+            IsCheckingForUpdates = false;
+        }
+    }
+
+    private async Task InstallUpdateAsync()
+    {
+        if (_availableUpdate is null) return;
+
+        IsInstallingUpdate = true;
+        UpdateStatus = "Downloading update...";
+        try
+        {
+            var result = await _updates.DownloadAndLaunchAsync(_availableUpdate);
+            UpdateStatus = result.Message;
+            if (result.Success)
+            {
+                ToastMessage = "Update downloaded. Meeting Assistant will restart.";
+                System.Windows.Application.Current?.Shutdown();
+            }
+        }
+        catch (Exception)
+        {
+            UpdateStatus = "Could not install the update. Try again later.";
+        }
+        finally
+        {
+            IsInstallingUpdate = false;
+        }
+    }
+
     public void Dispose()
     {
         _recordingTimer.Stop();
@@ -980,6 +1090,8 @@ public sealed class MainViewModel : ViewModelBase
         _hotkey.ToggleRecordingRequested -= OnGlobalHotkeyRequested;
         _processingCancellation?.Cancel();
         _processingCancellation?.Dispose();
+        _updateCheckCancellation?.Cancel();
+        _updateCheckCancellation?.Dispose();
         LocalizationService.LanguageChanged -= OnLanguageChanged;
     }
 }

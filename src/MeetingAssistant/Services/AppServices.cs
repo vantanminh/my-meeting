@@ -17,6 +17,7 @@ public sealed class AppServices : IDisposable
         OpenAiIntelligence = new OpenAiMeetingIntelligenceService(OpenAiConfiguration);
         IntelligenceService = OpenAiIntelligence;
         CloudSyncService = new FirebaseCloudSyncService(firebaseConfiguration, AuthService);
+        UpdateService = new UpdateChannelService(new UpdateChannelConfiguration());
         HotkeyService = new GlobalHotkeyService();
         TrayService = new TrayService();
     }
@@ -29,12 +30,14 @@ public sealed class AppServices : IDisposable
     public IAudioCaptureService AudioCaptureService { get; }
     public IMeetingIntelligenceService IntelligenceService { get; }
     public ICloudSyncService CloudSyncService { get; }
+    public IUpdateChannelService UpdateService { get; }
     public IGlobalHotkeyService HotkeyService { get; }
     public ITrayService TrayService { get; }
 
     public void Dispose()
     {
         AudioCaptureService.Dispose();
+        UpdateService.Dispose();
         HotkeyService.Dispose();
         TrayService.Dispose();
     }

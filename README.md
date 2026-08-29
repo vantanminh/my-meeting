@@ -96,6 +96,29 @@ winget install --id JRSoftware.InnoSetup -e
 
 The generated installer is `dist\MeetingAssistant-Setup.exe`. Do not put an OpenAI API key in this installer; each user sets their own key from Settings.
 
+## GitHub update channel and CI/CD release
+
+The app can check a public GitHub repository for its latest non-prerelease release from Settings. When a newer release contains `MeetingAssistant-Setup.exe`, the app downloads it to the user's temporary folder, starts the installer, and restarts Meeting Assistant. Network checks are bounded by a short timeout so an unavailable GitHub does not block the UI.
+
+The workflow at `.github/workflows/release.yml` runs on every push to `main` or `master` (and can be started manually). It finds the highest existing `vMAJOR.MINOR.PATCH` tag, increments the patch number, embeds that version into the executable and installer, builds the self-contained `.exe`, and publishes a GitHub Release with the installer asset. Version numbers are therefore advanced by release tags and do not require a source-code version commit or a CI loop.
+
+Before enabling the workflow:
+
+1. Make the GitHub repository **Public**. The installed app uses GitHub's unauthenticated latest-release endpoint.
+2. In **Settings → Secrets and variables → Actions → Variables**, add `MEETING_ASSISTANT_FIREBASE_API_KEY` and `MEETING_ASSISTANT_FIREBASE_PROJECT_ID`. The API key is the Firebase Web API key; it is not an OpenAI key.
+3. Ensure Actions can write repository contents. The workflow requests `contents: write` and uses the automatically provided `GITHUB_TOKEN`; no GitHub personal access token is packaged into the app.
+
+The release build injects the GitHub owner and repository name automatically from the workflow context. Local builds default to `vantanminh/my-meeting`; override them when building a fork:
+
+```powershell
+$env:MEETING_ASSISTANT_GITHUB_OWNER = "your-github-owner"       # optional for this repository
+$env:MEETING_ASSISTANT_GITHUB_REPOSITORY = "your-public-repository" # optional for this repository
+$env:MEETING_ASSISTANT_APP_VERSION = "1.0.0"
+.\installer\build-installer.ps1
+```
+
+The first CI run creates `v1.0.0`; later runs create `v1.0.1`, `v1.0.2`, and so on. A package built from source remains usable and uses the default public repository unless its update channel is explicitly disabled.
+
 ## Verification
 
 Run the deterministic smoke checks:
@@ -104,4 +127,4 @@ Run the deterministic smoke checks:
 dotnet run --project tests/MeetingAssistant.Smoke/MeetingAssistant.Smoke.csproj --configuration Release
 ```
 
-The smoke project checks initial auth state, both audio setup sources, WASAPI/fallback capture, processing progress, transcript speaker turns, speaker profiles, and summary action items.
+The smoke project checks initial auth state, both audio setup sources, WASAPI/fallback capture, processing progress, transcript speaker turns, speaker profiles, summary action items, GitHub release parsing/downloads, and bounded update timeouts.

@@ -3,6 +3,10 @@ param(
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
+    [string]$Version = "",
+    [string]$GitHubOwner = "",
+    [string]$GitHubRepository = "",
+    [string]$UpdateAssetName = "",
     [switch]$SkipInstaller
 )
 
@@ -12,21 +16,63 @@ $projectPath = Join-Path $repoRoot "src\MeetingAssistant\MeetingAssistant.csproj
 $publishPath = Join-Path $repoRoot "src\MeetingAssistant\bin\$Configuration\net8.0-windows\$Runtime\publish"
 $installerPath = Join-Path $repoRoot "installer\MeetingAssistant.iss"
 
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $Version = [Environment]::GetEnvironmentVariable("MEETING_ASSISTANT_APP_VERSION")
+}
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $Version = "1.0.0"
+}
+if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Version must use MAJOR.MINOR.PATCH format. Received: $Version"
+}
+
+if ([string]::IsNullOrWhiteSpace($GitHubOwner)) {
+    $GitHubOwner = [Environment]::GetEnvironmentVariable("MEETING_ASSISTANT_GITHUB_OWNER")
+}
+if ([string]::IsNullOrWhiteSpace($GitHubOwner)) {
+    $GitHubOwner = "vantanminh"
+}
+if ([string]::IsNullOrWhiteSpace($GitHubRepository)) {
+    $GitHubRepository = [Environment]::GetEnvironmentVariable("MEETING_ASSISTANT_GITHUB_REPOSITORY")
+}
+if ([string]::IsNullOrWhiteSpace($GitHubRepository)) {
+    $GitHubRepository = "my-meeting"
+}
+if ([string]::IsNullOrWhiteSpace($UpdateAssetName)) {
+    $UpdateAssetName = [Environment]::GetEnvironmentVariable("MEETING_ASSISTANT_UPDATE_ASSET")
+}
+if ([string]::IsNullOrWhiteSpace($UpdateAssetName)) {
+    $UpdateAssetName = "MeetingAssistant-Setup.exe"
+}
+if ($UpdateAssetName -ne [IO.Path]::GetFileName($UpdateAssetName)) {
+    throw "Update asset name must be a file name, not a path."
+}
+
 $firebaseApiKey = [Environment]::GetEnvironmentVariable("MEETING_ASSISTANT_FIREBASE_API_KEY")
 $firebaseProjectId = [Environment]::GetEnvironmentVariable("MEETING_ASSISTANT_FIREBASE_PROJECT_ID")
 if ([string]::IsNullOrWhiteSpace($firebaseApiKey) -or [string]::IsNullOrWhiteSpace($firebaseProjectId)) {
     throw "Set MEETING_ASSISTANT_FIREBASE_API_KEY and MEETING_ASSISTANT_FIREBASE_PROJECT_ID before building a shareable installer."
 }
 
-Write-Host "Publishing self-contained $Runtime build..."
+Write-Host "Publishing self-contained $Runtime build version $Version..."
+$assemblyVersion = "$Version.0"
 dotnet publish $projectPath --configuration $Configuration --runtime $Runtime --self-contained true `
-    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+    -p:Version=$Version -p:AssemblyVersion=$assemblyVersion -p:FileVersion=$assemblyVersion -p:InformationalVersion=$Version
 
 $firebaseConfig = [ordered]@{
     apiKey = $firebaseApiKey
     projectId = $firebaseProjectId
 }
 $firebaseConfig | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $publishPath "firebase.config.json") -Encoding utf8
+
+$updateConfig = [ordered]@{
+    enabled = -not ([string]::IsNullOrWhiteSpace($GitHubOwner) -or [string]::IsNullOrWhiteSpace($GitHubRepository))
+    owner = if ($null -eq $GitHubOwner) { "" } else { $GitHubOwner.Trim() }
+    repository = if ($null -eq $GitHubRepository) { "" } else { $GitHubRepository.Trim() }
+    assetName = $UpdateAssetName.Trim()
+}
+$updateConfig | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $publishPath "update.config.json") -Encoding utf8
 
 if ($SkipInstaller) {
     Write-Host "Published package is ready at $publishPath"
@@ -54,7 +100,7 @@ else {
 }
 
 New-Item -ItemType Directory -Path (Join-Path $repoRoot "dist") -Force | Out-Null
-& $isccPath $installerPath
+& $isccPath "/DAppVersion=$Version" $installerPath
 if ($LASTEXITCODE -ne 0) {
     throw "Inno Setup failed with exit code $LASTEXITCODE."
 }

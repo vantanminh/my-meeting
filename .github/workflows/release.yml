@@ -1,0 +1,123 @@
+name: Build and publish Windows release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: meeting-assistant-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      MEETING_ASSISTANT_FIREBASE_API_KEY: ${{ vars.MEETING_ASSISTANT_FIREBASE_API_KEY }}
+      MEETING_ASSISTANT_FIREBASE_PROJECT_ID: ${{ vars.MEETING_ASSISTANT_FIREBASE_PROJECT_ID }}
+      MEETING_ASSISTANT_GITHUB_OWNER: ${{ github.repository_owner }}
+      MEETING_ASSISTANT_GITHUB_REPOSITORY: ${{ github.event.repository.name }}
+
+    steps:
+      - name: Check out source and tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify public repository
+        shell: pwsh
+        env:
+          REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: |
+          if ($env:REPOSITORY_VISIBILITY -ne "public") {
+            throw "This update channel requires the GitHub repository to be public."
+          }
+
+      - name: Calculate next patch version
+        id: version
+        shell: pwsh
+        run: |
+          git fetch --tags --force
+          $versions = @(
+            git tag --list "v*" | ForEach-Object {
+              if ($_ -match '^v(?<value>\d+\.\d+\.\d+)$') {
+                try { [version]$Matches.value } catch { }
+              }
+            }
+          )
+
+          if ($versions.Count -eq 0) {
+            $next = [version]"1.0.0"
+          }
+          else {
+            $latest = $versions | Sort-Object -Descending | Select-Object -First 1
+            $next = [version]::new($latest.Major, $latest.Minor, $latest.Build + 1)
+          }
+
+          $version = $next.ToString(3)
+          $tag = "v$version"
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          Write-Host "Next release: $tag"
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.x
+
+      - name: Run deterministic smoke checks
+        shell: pwsh
+        run: |
+          $env:MEETING_ASSISTANT_FIREBASE_API_KEY = $null
+          $env:MEETING_ASSISTANT_FIREBASE_PROJECT_ID = $null
+          $env:MEETING_ASSISTANT_GITHUB_OWNER = $null
+          $env:MEETING_ASSISTANT_GITHUB_REPOSITORY = $null
+          $env:OPENAI_API_KEY = $null
+          $env:MEETING_ASSISTANT_OPENAI_API_KEY = $null
+          dotnet run --project tests/MeetingAssistant.Smoke/MeetingAssistant.Smoke.csproj --configuration Release
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $knownPaths = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",
+            "${env:LOCALAPPDATA}\Programs\Inno Setup 6\ISCC.exe"
+          )
+          if (-not ($knownPaths | Where-Object { $_ -and (Test-Path -LiteralPath $_) })) {
+            choco install innosetup --no-progress --yes
+          }
+
+      - name: Build self-contained installer
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:MEETING_ASSISTANT_FIREBASE_API_KEY) -or [string]::IsNullOrWhiteSpace($env:MEETING_ASSISTANT_FIREBASE_PROJECT_ID)) {
+            throw "Configure repository Actions variables MEETING_ASSISTANT_FIREBASE_API_KEY and MEETING_ASSISTANT_FIREBASE_PROJECT_ID before publishing."
+          }
+
+          .\installer\build-installer.ps1 -Version $env:RELEASE_VERSION
+          $installer = Get-Item -LiteralPath .\dist\MeetingAssistant-Setup.exe
+          if ($installer.Length -le 0) { throw "The installer was not produced." }
+          Write-Host "Built $($installer.FullName) ($($installer.Length) bytes)."
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release create $env:RELEASE_TAG .\dist\MeetingAssistant-Setup.exe `
+            --repo $env:GITHUB_REPOSITORY `
+            --target $env:GITHUB_SHA `
+            --title "Meeting Assistant $env:RELEASE_VERSION" `
+            --generate-notes

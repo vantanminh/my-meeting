@@ -10,8 +10,10 @@
     <AssemblyName>MeetingAssistant</AssemblyName>
     <RootNamespace>MeetingAssistant</RootNamespace>
     <Platforms>AnyCPU</Platforms>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version Condition="'$(Version)' == ''">1.0.0</Version>
+    <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">1.0.0.0</AssemblyVersion>
+    <FileVersion Condition="'$(FileVersion)' == ''">1.0.0.0</FileVersion>
+    <InformationalVersion Condition="'$(InformationalVersion)' == ''">1.0.0</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>

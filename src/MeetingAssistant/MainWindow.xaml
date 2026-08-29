@@ -148,6 +148,12 @@
                 <DataTrigger Binding="{Binding HasToast}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
             </Style.Triggers>
         </Style>
+        <Style x:Key="UpdateAvailableButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasAvailableUpdate}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
     <Grid>
@@ -1042,6 +1048,34 @@
                                                 <TextBlock Text="The key is stored in this Windows user profile, never in the installer." FontSize="10" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,5,0,0" />
                                             </StackPanel>
                                             <Button Grid.Column="1" Style="{StaticResource SecondaryButton}" Command="{Binding TestOpenAiCommand}" Content="Test connection" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Top" />
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource CardStyle}" Margin="0,0,0,14">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="UPDATES" Style="{StaticResource SectionLabel}" />
+                                                <TextBlock Text="Check GitHub for the latest Meeting Assistant release." FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                            </StackPanel>
+                                            <Border Grid.Column="1" Background="{StaticResource BlueDimBrush}" CornerRadius="11" Padding="8,4" VerticalAlignment="Top">
+                                                <TextBlock Text="{Binding UpdateChannelLabel}" FontSize="9" Foreground="{StaticResource BlueBrush}" />
+                                            </Border>
+                                        </Grid>
+                                        <Grid Margin="0,16,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding UpdateStatus}" FontSize="10" Foreground="{StaticResource SubtleBrush}" TextWrapping="Wrap" />
+                                                <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                                                    <TextBlock Text="Installed" FontSize="10" Foreground="{StaticResource MutedBrush}" />
+                                                    <TextBlock Text="{Binding AppVersionLabel}" FontSize="10" Foreground="{StaticResource MutedBrush}" Margin="4,0,0,0" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                                                <Button Style="{StaticResource SecondaryButton}" Command="{Binding CheckForUpdatesCommand}" Content="Check for updates" FontSize="11" />
+                                                <Button Style="{StaticResource UpdateAvailableButton}" Command="{Binding InstallUpdateCommand}" Content="Download and restart" FontSize="11" Margin="8,0,0,0" />
+                                            </StackPanel>
                                         </Grid>
                                     </StackPanel>
                                 </Border>

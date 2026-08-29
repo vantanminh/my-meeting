@@ -246,7 +246,26 @@ public static class LocalizationService
             ["An account already exists for that email."] = "Email này đã có tài khoản.",
             ["Choose a stronger password."] = "Hãy chọn mật khẩu mạnh hơn.",
             ["Firebase is not reachable. Try again or use the local workspace."] = "Không thể kết nối Firebase. Hãy thử lại hoặc dùng workspace cục bộ.",
-            ["Firebase returned an unexpected response. Try again."] = "Firebase trả về phản hồi không mong đợi. Hãy thử lại."
+            ["Firebase returned an unexpected response. Try again."] = "Firebase trả về phản hồi không mong đợi. Hãy thử lại.",
+            ["UPDATES"] = "C\u1eacP NH\u1eacT",
+            ["Check GitHub for the latest Meeting Assistant release."] = "Ki\u1ec3m tra GitHub \u0111\u1ec3 xem b\u1ea3n ph\u00e1t h\u00e0nh Meeting Assistant m\u1edbi nh\u1ea5t.",
+            ["GitHub Releases"] = "B\u1ea3n ph\u00e1t h\u00e0nh GitHub",
+            ["Not configured"] = "Ch\u01b0a c\u1ea5u h\u00ecnh",
+            ["Installed"] = "\u0110\u00e3 c\u00e0i",
+            ["Check for updates"] = "Ki\u1ec3m tra c\u1eadp nh\u1eadt",
+            ["Download and restart"] = "T\u1ea3i v\u00e0 kh\u1edfi \u0111\u1ed9ng l\u1ea1i",
+            ["Update available"] = "C\u00f3 b\u1ea3n c\u1eadp nh\u1eadt",
+            ["Updates are not configured for this build."] = "B\u1ea3n build n\u00e0y ch\u01b0a \u0111\u01b0\u1ee3c c\u1ea5u h\u00ecnh k\u00eanh c\u1eadp nh\u1eadt.",
+            ["Updates are ready to check."] = "K\u00eanh c\u1eadp nh\u1eadt \u0111\u00e3 s\u1eb5n s\u00e0ng.",
+            ["Checking for updates..."] = "\u0110ang ki\u1ec3m tra c\u1eadp nh\u1eadt...",
+            ["You are up to date."] = "B\u1ea1n \u0111ang d\u00f9ng phi\u00ean b\u1ea3n m\u1edbi nh\u1ea5t.",
+            ["Could not check for updates. Check your network and try again."] = "Kh\u00f4ng th\u1ec3 ki\u1ec3m tra c\u1eadp nh\u1eadt. H\u00e3y ki\u1ec3m tra m\u1ea1ng v\u00e0 th\u1eed l\u1ea1i.",
+            ["Downloading update..."] = "\u0110ang t\u1ea3i b\u1ea3n c\u1eadp nh\u1eadt...",
+            ["Update downloaded. Restarting Meeting Assistant."] = "\u0110\u00e3 t\u1ea3i b\u1ea3n c\u1eadp nh\u1eadt. Meeting Assistant s\u1ebd kh\u1edfi \u0111\u1ed9ng l\u1ea1i.",
+            ["Could not install the update. Try again later."] = "Kh\u00f4ng th\u1ec3 c\u00e0i b\u1ea3n c\u1eadp nh\u1eadt. H\u00e3y th\u1eed l\u1ea1i sau.",
+            ["No public release has been published yet."] = "Ch\u01b0a c\u00f3 b\u1ea3n ph\u00e1t h\u00e0nh c\u00f4ng khai.",
+            ["GitHub update checks are rate limited. Try again later."] = "GitHub \u0111ang gi\u1edbi h\u1ea1n s\u1ed1 l\u1ea7n ki\u1ec3m tra. H\u00e3y th\u1eed l\u1ea1i sau.",
+            ["Could not reach GitHub. Check the network and try again."] = "Kh\u00f4ng th\u1ec3 k\u1ebft n\u1ed1i GitHub. H\u00e3y ki\u1ec3m tra m\u1ea1ng v\u00e0 th\u1eed l\u1ea1i."
         };
 
     private static readonly List<WeakReference<FrameworkElement>> Roots = [];

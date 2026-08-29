@@ -1,5 +1,7 @@
 #define AppName "Meeting Assistant"
-#define AppVersion "1.0.0"
+#ifndef AppVersion
+  #define AppVersion "1.0.0"
+#endif
 #define AppPublisher "Meeting Assistant"
 #define AppExeName "MeetingAssistant.exe"
 #define PublishDir "..\\src\\MeetingAssistant\\bin\\Release\\net8.0-windows\\win-x64\\publish"
@@ -19,6 +21,8 @@ ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 UninstallDisplayIcon={app}\{#AppExeName}
 WizardStyle=modern
+CloseApplications=yes
+RestartApplications=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
