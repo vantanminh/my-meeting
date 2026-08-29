@@ -101,3 +101,9 @@ run `harness upgrade` to update the harness block in this AGENTS.md.
 Only the harness-managed section (markers HARNESS:BEGIN through HARNESS:END)
 is modified — all other content is preserved.
 <!-- HARNESS:END -->
+
+## Task completion
+
+- When a requested task is finished and verified, always create a Git commit for the task changes before responding, unless the user explicitly asks not to commit.
+- Inspect `git status` before committing, preserve unrelated user changes, and never discard them.
+- After committing, verify that the worktree is clean and report the commit hash in the final response.
