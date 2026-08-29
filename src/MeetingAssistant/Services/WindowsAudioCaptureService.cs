@@ -108,8 +108,11 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
         }
 
         var duration = _stopwatch.Elapsed;
-        var nativeStop = Task.Run(StopWasapiCapture);
-        await Task.WhenAny(nativeStop, Task.Delay(TimeSpan.FromSeconds(3)));
+        // Do not return the recording until both WASAPI streams and both WAV
+        // writers have been fully stopped. Processing opens these files
+        // immediately after StopAsync returns; returning on a timeout leaves
+        // an unfinished RIFF header visible to the transcription provider.
+        await Task.Run(StopWasapiCapture);
         _stopwatch.Stop();
         IsCapturing = false;
         _isPaused = false;
@@ -197,12 +200,12 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
         if (_systemAudio is not null) _systemAudio.DataAvailable -= SystemAudioDataAvailable;
         try { _microphone?.StopRecording(); } catch { }
         try { _systemAudio?.StopRecording(); } catch { }
-        _microphone?.Dispose();
-        _systemAudio?.Dispose();
+        try { _microphone?.Dispose(); } catch { }
+        try { _systemAudio?.Dispose(); } catch { }
         lock (_writerLock)
         {
-            _microphoneWriter?.Dispose();
-            _systemWriter?.Dispose();
+            try { _microphoneWriter?.Dispose(); } catch { }
+            try { _systemWriter?.Dispose(); } catch { }
         }
 
         _microphone = null;

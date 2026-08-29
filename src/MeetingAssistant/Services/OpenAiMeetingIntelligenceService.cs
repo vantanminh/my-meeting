@@ -5,6 +5,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using MeetingAssistant.Models;
+using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 
 namespace MeetingAssistant.Services;
 
@@ -12,6 +14,10 @@ public sealed record OpenAiConnectionResult(bool Success, string Message);
 
 public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceService
 {
+    private const int ProviderSampleRate = 16_000;
+    private const long MaxTranscriptionFileBytes = 24L * 1024 * 1024;
+    private const int ChunkHeaderSafetyBytes = 1024;
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true
@@ -46,18 +52,30 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
         CancellationToken cancellationToken = default)
     {
         var tracks = AudioTracks(recording).ToList();
-        if (!_configuration.IsConfigured || tracks.Count == 0)
+        if (!_configuration.IsConfigured)
             return await _localFallback.ProcessAsync(recording, progress, cancellationToken);
+        if (tracks.Count == 0)
+        {
+            if (!HasCapturedAudioPath(recording))
+                return await _localFallback.ProcessAsync(recording, progress, cancellationToken);
+
+            throw new OpenAiServiceException(
+                "No usable recording audio was found. Your recording is still available; record a new meeting and retry.");
+        }
 
         progress.Report(new ProcessingProgress(3, 0, "Preparing audio", "Checking microphone and system audio tracks"));
         await Task.Yield();
         cancellationToken.ThrowIfCancellationRequested();
+        progress.Report(new ProcessingProgress(8, 0, "Preparing audio", "Converting captured tracks to provider-compatible PCM WAV"));
+        using var preparedTracks = await Task.Run(
+            () => PrepareAudioTracks(tracks, cancellationToken),
+            cancellationToken);
 
         var transcriptSegments = new List<TranscriptSegment>();
-        for (var index = 0; index < tracks.Count; index++)
+        for (var index = 0; index < preparedTracks.Tracks.Count; index++)
         {
-            var track = tracks[index];
-            var percent = 15 + (int)Math.Round(index / (double)tracks.Count * 35);
+            var track = preparedTracks.Tracks[index];
+            var percent = 15 + (int)Math.Round(index / (double)preparedTracks.Tracks.Count * 35);
             progress.Report(new ProcessingProgress(percent, 1, "Transcribing", $"Transcribing {track.DisplayName.ToLowerInvariant()}"));
             var segments = await TranscribeAsync(track, recording.Duration, cancellationToken);
             transcriptSegments.AddRange(segments);
@@ -184,16 +202,21 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
                     var end = ReadDouble(segment, "end");
                     var serverSpeaker = segment.TryGetProperty("speaker", out var speakerElement) ? speakerElement.GetString() : null;
                     var speakerName = string.IsNullOrWhiteSpace(serverSpeaker) ? track.DisplayName : $"{track.DisplayName} · {serverSpeaker}";
-                    segments.Add(CreateSegment(speakerName, start, end, text));
+                    segments.Add(CreateSegment(speakerName, start + track.Offset.TotalSeconds, end + track.Offset.TotalSeconds, text));
                 }
             }
 
             if (segments.Count > 0) return segments;
 
             var transcript = root.TryGetProperty("text", out var transcriptElement) ? transcriptElement.GetString()?.Trim() : null;
+            var trackDuration = track.Duration > TimeSpan.Zero ? track.Duration : fallbackDuration;
             return string.IsNullOrWhiteSpace(transcript)
                 ? []
-                : [CreateSegment(track.DisplayName, 0, Math.Max(fallbackDuration.TotalSeconds, 1), transcript)];
+                : [CreateSegment(
+                    track.DisplayName,
+                    track.Offset.TotalSeconds,
+                    track.Offset.TotalSeconds + Math.Max(trackDuration.TotalSeconds, 1),
+                    transcript)];
         }
         catch (JsonException)
         {
@@ -257,8 +280,251 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
             yield return new AudioTrack(recording.SystemAudioPath!, "Meeting participant");
     }
 
+    private static bool HasCapturedAudioPath(RecordingData recording)
+        => !string.IsNullOrWhiteSpace(recording.MicrophonePath)
+            || !string.IsNullOrWhiteSpace(recording.SystemAudioPath);
+
     private static bool IsUsableAudioFile(string? path)
         => !string.IsNullOrWhiteSpace(path) && File.Exists(path) && new FileInfo(path).Length > 44;
+
+    private static PreparedAudioTracks PrepareAudioTracks(
+        IReadOnlyCollection<AudioTrack> tracks,
+        CancellationToken cancellationToken)
+    {
+        var temporaryDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"MeetingAssistant-Audio-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(temporaryDirectory);
+
+        try
+        {
+            var prepared = new List<AudioTrack>(tracks.Count);
+            OpenAiServiceException? firstFailure = null;
+            foreach (var track in tracks)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var outputPath = Path.Combine(
+                    temporaryDirectory,
+                    track.DisplayName.Equals("You", StringComparison.OrdinalIgnoreCase)
+                        ? "microphone.wav"
+                        : "system-audio.wav");
+                try
+                {
+                    NormalizeTrack(track, outputPath, cancellationToken);
+                    var uploadTracks = CreateUploadTracks(track, outputPath, temporaryDirectory, cancellationToken);
+                    prepared.AddRange(uploadTracks);
+                    if (uploadTracks.Count > 1) DeleteFile(outputPath);
+                }
+                catch (EmptyAudioTrackException)
+                {
+                    // WASAPI loopback can produce a valid, tiny WAV header when
+                    // no system sound was playing. It must not be uploaded.
+                    DeleteFile(outputPath);
+                }
+                catch (OpenAiServiceException exception)
+                {
+                    // Keep a healthy microphone track usable when the optional
+                    // system track is malformed or unavailable. If every track
+                    // fails, the first detailed error is returned below.
+                    firstFailure ??= exception;
+                    DeleteFile(outputPath);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException && exception is not OutOfMemoryException)
+                {
+                    firstFailure ??= new OpenAiServiceException(
+                        $"The {TrackLabel(track)} audio could not be prepared for transcription. Your recording is still available; record a new meeting and retry.",
+                        exception);
+                    DeleteFile(outputPath);
+                }
+            }
+
+            if (prepared.Count == 0)
+            {
+                if (firstFailure is not null) throw firstFailure;
+                throw new OpenAiServiceException(
+                    "No usable recording audio was found. Your recording is still available; record a new meeting and retry.");
+            }
+
+            return new PreparedAudioTracks(temporaryDirectory, prepared);
+        }
+        catch
+        {
+            DeleteDirectory(temporaryDirectory);
+            throw;
+        }
+    }
+
+    private static void NormalizeTrack(
+        AudioTrack track,
+        string outputPath,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var reader = new AudioFileReader(track.Path);
+            ISampleProvider sampleProvider = reader;
+            if (sampleProvider.WaveFormat.Channels == 2)
+            {
+                var stereo = new StereoToMonoSampleProvider(sampleProvider)
+                {
+                    LeftVolume = 0.5f,
+                    RightVolume = 0.5f
+                };
+                sampleProvider = stereo;
+            }
+            else if (sampleProvider.WaveFormat.Channels > 2)
+            {
+                var mono = new MultiplexingSampleProvider(new[] { sampleProvider }, 1);
+                mono.ConnectInputToOutput(0, 0);
+                sampleProvider = mono;
+            }
+
+            if (sampleProvider.WaveFormat.SampleRate != ProviderSampleRate)
+                sampleProvider = new WdlResamplingSampleProvider(sampleProvider, ProviderSampleRate);
+
+            var pcm16 = new SampleToWaveProvider16(sampleProvider);
+            using var writer = new WaveFileWriter(outputPath, pcm16.WaveFormat);
+            var buffer = new byte[Math.Max(pcm16.WaveFormat.AverageBytesPerSecond, 4096)];
+            var totalAudioBytes = 0;
+
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var bytesRead = pcm16.Read(buffer, 0, buffer.Length);
+                if (bytesRead <= 0) break;
+                writer.Write(buffer, 0, bytesRead);
+                totalAudioBytes += bytesRead;
+            }
+
+            if (totalAudioBytes == 0)
+                throw new EmptyAudioTrackException();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (EmptyAudioTrackException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw new OpenAiServiceException(
+                $"The {TrackLabel(track)} audio is incomplete or unsupported. Your recording is still available; record a new meeting and retry.",
+                exception);
+        }
+
+        if (!IsUsableAudioFile(outputPath))
+            throw new OpenAiServiceException(
+                $"The {TrackLabel(track)} audio could not be prepared for transcription. Your recording is still available; record a new meeting and retry.");
+    }
+
+    private static IReadOnlyList<AudioTrack> CreateUploadTracks(
+        AudioTrack source,
+        string normalizedPath,
+        string temporaryDirectory,
+        CancellationToken cancellationToken)
+    {
+        if (new FileInfo(normalizedPath).Length <= MaxTranscriptionFileBytes)
+        {
+            using var reader = new WaveFileReader(normalizedPath);
+            return
+            [
+                new AudioTrack(
+                    normalizedPath,
+                    source.DisplayName,
+                    TimeSpan.Zero,
+                    DurationFromBytes(reader.Length, reader.WaveFormat.AverageBytesPerSecond))
+            ];
+        }
+
+        using var sourceReader = new WaveFileReader(normalizedPath);
+        var bytesPerSecond = sourceReader.WaveFormat.AverageBytesPerSecond;
+        var blockAlign = Math.Max(sourceReader.WaveFormat.BlockAlign, 1);
+        var maxChunkDataBytes = MaxTranscriptionFileBytes - ChunkHeaderSafetyBytes;
+        maxChunkDataBytes -= maxChunkDataBytes % blockAlign;
+        if (bytesPerSecond <= 0 || maxChunkDataBytes < blockAlign)
+            throw new InvalidDataException("The normalized audio format cannot be split safely.");
+
+        var buffer = new byte[Math.Min(64 * 1024, (int)maxChunkDataBytes)];
+        var chunks = new List<AudioTrack>();
+        long totalBytesRead = 0;
+        var chunkIndex = 0;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var chunkPath = Path.Combine(
+                temporaryDirectory,
+                $"{TrackFileStem(source)}-{chunkIndex + 1:000}.wav");
+            long chunkBytesRead = 0;
+            using (var writer = new WaveFileWriter(chunkPath, sourceReader.WaveFormat))
+            {
+                while (chunkBytesRead < maxChunkDataBytes)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var requestedBytes = (int)Math.Min(buffer.Length, maxChunkDataBytes - chunkBytesRead);
+                    var bytesRead = sourceReader.Read(buffer, 0, requestedBytes);
+                    if (bytesRead <= 0) break;
+                    writer.Write(buffer, 0, bytesRead);
+                    chunkBytesRead += bytesRead;
+                }
+            }
+
+            if (chunkBytesRead == 0)
+            {
+                DeleteFile(chunkPath);
+                break;
+            }
+
+            chunks.Add(new AudioTrack(
+                chunkPath,
+                source.DisplayName,
+                DurationFromBytes(totalBytesRead, bytesPerSecond),
+                DurationFromBytes(chunkBytesRead, bytesPerSecond)));
+            totalBytesRead += chunkBytesRead;
+            chunkIndex++;
+            if (chunkBytesRead < maxChunkDataBytes) break;
+        }
+
+        return chunks.Count == 0
+            ? throw new EmptyAudioTrackException()
+            : chunks;
+    }
+
+    private static TimeSpan DurationFromBytes(long bytes, int bytesPerSecond)
+        => bytesPerSecond <= 0
+            ? TimeSpan.Zero
+            : TimeSpan.FromSeconds(bytes / (double)bytesPerSecond);
+
+    private static string TrackLabel(AudioTrack track)
+        => track.DisplayName.Equals("You", StringComparison.OrdinalIgnoreCase)
+            ? "microphone"
+            : "system audio";
+
+    private static string TrackFileStem(AudioTrack track)
+        => track.DisplayName.Equals("You", StringComparison.OrdinalIgnoreCase)
+            ? "microphone"
+            : "system-audio";
+
+    private static void DeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    private static void DeleteDirectory(string directory)
+    {
+        try
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
 
     private static TranscriptSegment CreateSegment(string speakerName, double start, double end, string text)
         => new()
@@ -329,10 +595,33 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
         return $"{fallback} ({(int)response.StatusCode})";
     }
 
-    private sealed record AudioTrack(string Path, string DisplayName);
+    private sealed record AudioTrack(
+        string Path,
+        string DisplayName,
+        TimeSpan Offset = default,
+        TimeSpan Duration = default);
+
+    private sealed class PreparedAudioTracks : IDisposable
+    {
+        public PreparedAudioTracks(string directory, IReadOnlyList<AudioTrack> tracks)
+        {
+            Directory = directory;
+            Tracks = tracks;
+        }
+
+        private string Directory { get; }
+        public IReadOnlyList<AudioTrack> Tracks { get; }
+
+        public void Dispose() => DeleteDirectory(Directory);
+    }
+
+    private sealed class EmptyAudioTrackException : Exception
+    {
+    }
 }
 
 public sealed class OpenAiServiceException : Exception
 {
     public OpenAiServiceException(string message) : base(message) { }
+    public OpenAiServiceException(string message, Exception innerException) : base(message, innerException) { }
 }

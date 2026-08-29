@@ -29,7 +29,7 @@ The first screen supports email/password auth and a local workspace. Local works
 
 The UI depends on small service contracts for auth, meeting persistence, audio capture, meeting intelligence, cloud sync, global hotkey, and tray state. The current build includes local adapters so it is useful without credentials:
 
-- `WindowsAudioCaptureService` captures separate WAV tracks with WASAPI and falls back to `DemoAudioCaptureService` when device access is unavailable.
+- `WindowsAudioCaptureService` captures separate WAV tracks with WASAPI, fully closes both writers before processing starts, and falls back to `DemoAudioCaptureService` when device access is unavailable.
 - `JsonMeetingRepository` is atomic local JSON persistence with starter meetings for a new workspace.
 - `DemoMeetingIntelligenceService` provides deterministic local processing so every UI state can be exercised.
 - `LocalAuthService` and `LocalCloudSyncService` provide offline-first behavior. The included Firebase Auth/Firestore adapters activate from package-time configuration without changing the view model or screens.
@@ -65,7 +65,7 @@ MEETING_ASSISTANT_OPENAI_TRANSCRIPTION_MODEL
 MEETING_ASSISTANT_OPENAI_SUMMARY_MODEL
 ```
 
-The default transcription model is `gpt-4o-transcribe`. The default summary model is `gpt-4.1-mini`; both are editable in Settings. If no OpenAI key is configured, recordings use the deterministic local demo processor. A real WASAPI recording supplies its microphone and system WAV tracks to OpenAI; preview fallback recordings continue to use the local demo.
+The default transcription model is `gpt-4o-transcribe`. The default summary model is `gpt-4.1-mini`; both are editable in Settings. If no OpenAI key is configured, recordings use the deterministic local demo processor. A real WASAPI recording is reopened and converted to provider-compatible mono 16 kHz PCM16 WAV files before upload, with an extension-bearing filename and `audio/wav` content type. Long tracks are split into safe sub-25 MB uploads and their transcript timestamps are restored. Empty loopback tracks are skipped when another track is valid; preview fallback recordings continue to use the local demo. The original local recording remains available when every track is invalid so `Retry processing` never loses the capture.
 
 For a development run, the minimum setup is:
 
@@ -127,4 +127,4 @@ Run the deterministic smoke checks:
 dotnet run --project tests/MeetingAssistant.Smoke/MeetingAssistant.Smoke.csproj --configuration Release
 ```
 
-The smoke project checks initial auth state, both audio setup sources, WASAPI/fallback capture, processing progress, transcript speaker turns, speaker profiles, summary action items, GitHub release parsing/downloads, and bounded update timeouts.
+The smoke project checks initial auth state, both audio setup sources, WASAPI/fallback capture and finalized WAV files, processing progress, transcript speaker turns, speaker profiles, PCM16 OpenAI audio normalization and malformed-audio recovery, summary action items, GitHub release parsing/downloads, and bounded update timeouts.

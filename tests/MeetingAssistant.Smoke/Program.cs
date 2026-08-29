@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -5,6 +6,7 @@ using System.Text.Json;
 using MeetingAssistant.Models;
 using MeetingAssistant.Services;
 using MeetingAssistant.ViewModels;
+using NAudio.Wave;
 
 var failures = new List<string>();
 var services = new AppServices();
@@ -99,8 +101,8 @@ try
     Directory.CreateDirectory(fakeAudioDirectory);
     var fakeMicrophonePath = Path.Combine(fakeAudioDirectory, "microphone.wav");
     var fakeSystemAudioPath = Path.Combine(fakeAudioDirectory, "system-audio.wav");
-    await File.WriteAllBytesAsync(fakeMicrophonePath, new byte[128]);
-    await File.WriteAllBytesAsync(fakeSystemAudioPath, new byte[128]);
+    WriteFloatWaveFile(fakeMicrophonePath);
+    WriteFloatWaveFile(fakeSystemAudioPath);
     var fakeHttpHandler = new FakeOpenAiHandler();
     using (var fakeHttpClient = new HttpClient(fakeHttpHandler))
     {
@@ -120,6 +122,47 @@ try
         if (openAiProcessed.Meeting.Transcript.Count != 2) failures.Add("OpenAI adapter should merge both audio tracks");
         if (openAiProcessed.Meeting.Summary.ActionItems.Count != 1) failures.Add("OpenAI adapter should parse a structured summary");
         if (openAiProcessed.Meeting.Status != MeetingStatus.Ready) failures.Add("OpenAI adapter should return a ready meeting");
+        if (fakeHttpHandler.AudioPayloads.Count != 2 || fakeHttpHandler.AudioPayloads.Any(payload => !IsPcm16Wave(payload)))
+            failures.Add("OpenAI adapter should normalize float WAV tracks to valid PCM16 WAV uploads");
+
+        var tinySystemPath = Path.Combine(fakeAudioDirectory, "tiny-system-audio.wav");
+        using (var tinyWriter = new WaveFileWriter(tinySystemPath, new WaveFormat(16_000, 16, 1)))
+            tinyWriter.Write(new byte[] { 0 }, 0, 1);
+        fakeHttpHandler.AudioPayloads.Clear();
+        var partialTrackResult = await fakeOpenAi.ProcessAsync(
+            new RecordingData
+            {
+                Title = "Partial loopback smoke test",
+                StartedAt = DateTimeOffset.Now,
+                Duration = TimeSpan.FromSeconds(1),
+                Configuration = new AudioConfiguration(),
+                MicrophonePath = fakeMicrophonePath,
+                SystemAudioPath = tinySystemPath
+            },
+            new Progress<ProcessingProgress>(_ => { }));
+        if (fakeHttpHandler.AudioPayloads.Count != 1 || partialTrackResult.Meeting.Transcript.Count != 1)
+            failures.Add("OpenAI adapter should skip a partial empty loopback track when microphone audio is usable");
+
+        var malformedPath = Path.Combine(fakeAudioDirectory, "malformed.wav");
+        await File.WriteAllBytesAsync(malformedPath, new byte[128]);
+        try
+        {
+            await fakeOpenAi.ProcessAsync(
+                new RecordingData
+                {
+                    Title = "Malformed audio smoke test",
+                    StartedAt = DateTimeOffset.Now,
+                    Duration = TimeSpan.FromSeconds(1),
+                    Configuration = new AudioConfiguration(),
+                    MicrophonePath = malformedPath
+                },
+                new Progress<ProcessingProgress>(_ => { }));
+            failures.Add("OpenAI adapter should reject malformed audio with a recoverable error");
+        }
+        catch (OpenAiServiceException exception) when (exception.Message.Contains("incomplete or unsupported", StringComparison.OrdinalIgnoreCase))
+        {
+            // Expected: the original recording remains available for retry.
+        }
 
         var connection = await fakeOpenAi.TestConnectionAsync();
         if (!connection.Success) failures.Add("OpenAI connection test should accept a reachable API");
@@ -127,6 +170,31 @@ try
         var pendingConnection = await fakeOpenAi.TestConnectionAsync(apiKeyOverride: "pending-key");
         if (!pendingConnection.Success || fakeHttpHandler.LastAuthorization != "pending-key")
             failures.Add("OpenAI connection test should use the key currently entered in Settings");
+
+        var longAudioPath = Path.Combine(fakeAudioDirectory, "long-meeting.wav");
+        WriteFloatWaveFile(longAudioPath, durationSeconds: 14 * 60, sampleRate: 8_000, channels: 1);
+        var chunkHandler = new FakeOpenAiHandler();
+        using var chunkHttpClient = new HttpClient(chunkHandler);
+        var chunkedOpenAi = new OpenAiMeetingIntelligenceService(
+            new OpenAiConfiguration("test-key", "gpt-4o-transcribe", "gpt-4.1-mini"),
+            httpClient: chunkHttpClient);
+        var chunkedResult = await chunkedOpenAi.ProcessAsync(
+            new RecordingData
+            {
+                Title = "Long OpenAI smoke test",
+                StartedAt = DateTimeOffset.Now,
+                Duration = TimeSpan.FromMinutes(14),
+                Configuration = new AudioConfiguration(),
+                MicrophonePath = longAudioPath
+            },
+            new Progress<ProcessingProgress>(_ => { }));
+        if (chunkHandler.AudioPayloads.Count < 2
+            || chunkHandler.AudioPayloads.Any(payload => payload.Length > 24 * 1024 * 1024 || !IsPcm16Wave(payload))
+            || chunkedResult.Meeting.Transcript.Count < 2
+            || chunkedResult.Meeting.Transcript[1].Start <= TimeSpan.Zero)
+        {
+            failures.Add("OpenAI adapter should split long PCM16 WAV uploads below the provider limit and restore timestamps");
+        }
     }
     Directory.Delete(fakeAudioDirectory, recursive: true);
 
@@ -247,6 +315,23 @@ try
     Console.WriteLine("capture stopped");
     if (captureResult.Duration < TimeSpan.Zero) failures.Add("capture duration cannot be negative");
     if (string.IsNullOrWhiteSpace(capture.CaptureProvider)) failures.Add("capture provider should be reported");
+    foreach (var path in new[] { captureResult.MicrophonePath, captureResult.SystemAudioPath }.Where(path => !string.IsNullOrWhiteSpace(path)))
+    {
+        try
+        {
+            if (new FileInfo(path!).Length <= 44)
+            {
+                failures.Add("native capture should close WAV files before processing");
+                continue;
+            }
+
+            using var reader = new WaveFileReader(path!);
+        }
+        catch (Exception exception)
+        {
+            failures.Add($"native capture should leave a readable WAV file: {exception.Message}");
+        }
+    }
 }
 catch (Exception exception)
 {
@@ -267,9 +352,64 @@ if (failures.Count > 0)
 Console.WriteLine("Smoke checks passed: auth state, audio setup, WASAPI/fallback capture, processing, transcript, speakers, summary, progress, and GitHub updates.");
 return 0;
 
+static void WriteFloatWaveFile(string path, double durationSeconds = 1, int sampleRate = 48_000, int channels = 2)
+{
+    var format = WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, channels);
+    var totalSamples = checked((long)Math.Round(durationSeconds * format.SampleRate * format.Channels));
+    var samples = new float[Math.Min(format.SampleRate * format.Channels, 48_000)];
+    using var writer = new WaveFileWriter(path, format);
+    for (long writtenSamples = 0; writtenSamples < totalSamples;)
+    {
+        var samplesToWrite = (int)Math.Min(samples.Length, totalSamples - writtenSamples);
+        for (var index = 0; index < samplesToWrite; index++)
+        {
+            var phase = (writtenSamples + index) / (double)format.Channels / format.SampleRate;
+            samples[index] = (float)(Math.Sin(phase * Math.PI * 2 * 440) * 0.15);
+        }
+
+        writer.WriteSamples(samples, 0, samplesToWrite);
+        writtenSamples += samplesToWrite;
+    }
+}
+
+static bool IsPcm16Wave(byte[] payload)
+{
+    if (payload.Length < 44 || !payload.AsSpan(0, 4).SequenceEqual("RIFF"u8) || !payload.AsSpan(8, 4).SequenceEqual("WAVE"u8))
+        return false;
+
+    var hasPcm16Format = false;
+    var hasAudioData = false;
+    var offset = 12;
+    while (offset + 8 <= payload.Length)
+    {
+        var chunkSize = BinaryPrimitives.ReadInt32LittleEndian(payload.AsSpan(offset + 4, 4));
+        if (chunkSize < 0 || offset + 8 > payload.Length) return false;
+        var chunkDataStart = offset + 8;
+        var chunkDataEnd = Math.Min(payload.Length, chunkDataStart + chunkSize);
+        if (payload.AsSpan(offset, 4).SequenceEqual("fmt "u8) && chunkSize >= 16 && chunkDataEnd >= chunkDataStart + 16)
+        {
+            var audioFormat = BinaryPrimitives.ReadUInt16LittleEndian(payload.AsSpan(chunkDataStart, 2));
+            var channels = BinaryPrimitives.ReadUInt16LittleEndian(payload.AsSpan(chunkDataStart + 2, 2));
+            var sampleRate = BinaryPrimitives.ReadInt32LittleEndian(payload.AsSpan(chunkDataStart + 4, 4));
+            var bitsPerSample = BinaryPrimitives.ReadUInt16LittleEndian(payload.AsSpan(chunkDataStart + 14, 2));
+            hasPcm16Format = audioFormat == 1 && channels == 1 && sampleRate == 16_000 && bitsPerSample == 16;
+        }
+        else if (payload.AsSpan(offset, 4).SequenceEqual("data"u8) && chunkSize > 0)
+        {
+            hasAudioData = true;
+        }
+
+        if (chunkDataStart + chunkSize > payload.Length) return false;
+        offset = chunkDataStart + chunkSize + (chunkSize & 1);
+    }
+
+    return hasPcm16Format && hasAudioData;
+}
+
 sealed class FakeOpenAiHandler : HttpMessageHandler
 {
     public string? LastAuthorization { get; private set; }
+    public List<byte[]> AudioPayloads { get; } = [];
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -277,7 +417,9 @@ sealed class FakeOpenAiHandler : HttpMessageHandler
 
         if (request.RequestUri?.AbsolutePath == "/v1/audio/transcriptions")
         {
-            await request.Content!.ReadAsByteArrayAsync(cancellationToken);
+            var requestBody = await request.Content!.ReadAsByteArrayAsync(cancellationToken);
+            var wavPayload = ExtractWavPayload(requestBody);
+            if (wavPayload.Length > 0) AudioPayloads.Add(wavPayload);
             return JsonResponse(JsonSerializer.Serialize(new { text = "A transcript returned by the fake OpenAI server." }));
         }
 
@@ -307,6 +449,23 @@ sealed class FakeOpenAiHandler : HttpMessageHandler
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
+
+    private static byte[] ExtractWavPayload(byte[] requestBody)
+    {
+        var riff = Encoding.ASCII.GetBytes("RIFF");
+        for (var index = 0; index <= requestBody.Length - riff.Length; index++)
+        {
+            if (!requestBody.AsSpan(index, riff.Length).SequenceEqual(riff)) continue;
+            if (index + 12 > requestBody.Length || !requestBody.AsSpan(index + 8, 4).SequenceEqual("WAVE"u8))
+                continue;
+
+            var riffSize = BinaryPrimitives.ReadInt32LittleEndian(requestBody.AsSpan(index + 4, 4));
+            var payloadLength = Math.Min(requestBody.Length - index, Math.Max(riffSize + 8, 0));
+            return requestBody.AsSpan(index, payloadLength).ToArray();
+        }
+
+        return [];
+    }
 }
 
 sealed class InMemoryUserEnvironmentStore : IUserEnvironmentStore
