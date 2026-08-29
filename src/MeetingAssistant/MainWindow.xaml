@@ -1021,7 +1021,8 @@
                                                 <ComboBox ItemsSource="{Binding OpenAiSummaryModelOptions}" IsEditable="True" Text="{Binding OpenAiSummaryModel, UpdateSourceTrigger=PropertyChanged}" />
                                             </StackPanel>
                                         </Grid>
-                                        <Grid Margin="0,16,0,0">
+                                        <Grid x:Name="OpenAiConnectionGrid" Margin="0,16,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                             <StackPanel>
                                                 <TextBlock Text="{Binding OpenAiConnectionStatus}" FontSize="10" Foreground="{StaticResource SubtleBrush}" TextWrapping="Wrap" VerticalAlignment="Center" />
                                                 <TextBlock Text="The key is stored in this Windows user profile, never in the installer." FontSize="10" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,5,0,0" />
