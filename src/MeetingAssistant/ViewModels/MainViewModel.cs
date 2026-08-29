@@ -79,6 +79,7 @@ public sealed class MainViewModel : ViewModelBase
     private string _transcriptSpeakerFilter = "All speakers";
     private string _toastMessage = string.Empty;
     private string _retentionOption = "Keep recordings for 30 days";
+    private string _selectedLanguage = "Tiếng Việt";
     private string _selectedTheme = nameof(ThemeMode.Dark);
     private double _microphoneLevel;
     private double _systemAudioLevel;
@@ -111,12 +112,15 @@ public sealed class MainViewModel : ViewModelBase
         _preferences = services.Preferences;
         _savedPreferences = _preferences.Load();
         _selectedTheme = ThemeService.Parse(_savedPreferences.Theme).ToString();
+        _selectedLanguage = string.Equals(_savedPreferences.Language, "en", StringComparison.OrdinalIgnoreCase) ? "English" : "Tiếng Việt";
         _retentionOption = _savedPreferences.RetentionOption;
         _keepLocalCopy = _savedPreferences.KeepLocalCopy;
         _syncPaused = _savedPreferences.SyncPaused;
         _startOnLogin = _savedPreferences.StartOnLogin;
         _cloud.IsPaused = _syncPaused;
         ThemeService.Apply(ThemeService.Parse(_selectedTheme));
+        LocalizationService.SetLanguage(_selectedLanguage == "English" ? "en" : "vi");
+        LocalizationService.LanguageChanged += OnLanguageChanged;
 
         _recordingTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _recordingTimer.Tick += (_, _) => UpdateRecordingClock();
@@ -130,6 +134,7 @@ public sealed class MainViewModel : ViewModelBase
         QualityOptions = ["Balanced · 48 kHz", "High quality · 48 kHz", "Compact · 16 kHz"];
         RetentionOptions = ["Keep recordings for 7 days", "Keep recordings for 30 days", "Keep recordings until deleted"];
         ThemeOptions = [nameof(ThemeMode.Dark), nameof(ThemeMode.Light)];
+        LanguageOptions = ["Tiếng Việt", "English"];
         TranscriptFilterOptions = ["All speakers"];
         FilteredTranscript = [];
         SpeakerEditors = [];
@@ -154,6 +159,7 @@ public sealed class MainViewModel : ViewModelBase
         SetTranscriptFilterCommand = new RelayCommand(parameter => SetTranscriptFilter(parameter as string ?? "All speakers"));
         SaveSpeakerCommand = new AsyncRelayCommand(SaveSpeakerAsync, () => true);
         SaveSettingsCommand = new AsyncRelayCommand(SaveSettingsAsync);
+        ClearSearchCommand = new RelayCommand(_ => SearchQuery = string.Empty, _ => HasSearchQuery);
     }
 
     public ObservableCollection<Meeting> Meetings { get; }
@@ -165,6 +171,7 @@ public sealed class MainViewModel : ViewModelBase
     public IReadOnlyList<string> QualityOptions { get; }
     public IReadOnlyList<string> RetentionOptions { get; }
     public IReadOnlyList<string> ThemeOptions { get; }
+    public IReadOnlyList<string> LanguageOptions { get; }
     public ObservableCollection<string> TranscriptFilterOptions { get; }
 
     public ICommand NavigateCommand { get; }
@@ -187,6 +194,7 @@ public sealed class MainViewModel : ViewModelBase
     public ICommand SetTranscriptFilterCommand { get; }
     public AsyncRelayCommand SaveSpeakerCommand { get; }
     public AsyncRelayCommand SaveSettingsCommand { get; }
+    public RelayCommand ClearSearchCommand { get; }
 
     public WorkspaceView CurrentView
     {
@@ -223,14 +231,14 @@ public sealed class MainViewModel : ViewModelBase
     }
 
     public string UserInitials => CurrentUser?.Initials ?? "MA";
-    public string UserFirstName => CurrentUser?.DisplayName.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "there";
-    public string SessionModeLabel => CurrentUser?.IsOffline == true ? "Offline workspace" : "Firebase-ready workspace";
-    public string CloudStatusLabel => _cloud.StatusLabel;
+    public string UserFirstName => LocalizationService.Translate(CurrentUser?.DisplayName.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "there");
+    public string SessionModeLabel => LocalizationService.Translate(CurrentUser?.IsOffline == true ? "Offline workspace" : "Firebase-ready workspace");
+    public string CloudStatusLabel => LocalizationService.Translate(_cloud.StatusLabel);
 
     public string Email { get => _email; set => SetProperty(ref _email, value); }
     public string Password { get => _password; set => SetProperty(ref _password, value); }
     public string DisplayName { get => _displayName; set => SetProperty(ref _displayName, value); }
-    public string AuthError { get => _authError; private set => SetProperty(ref _authError, value); }
+    public string AuthError { get => LocalizationService.Translate(_authError); private set => SetProperty(ref _authError, value); }
     public bool IsSignUpMode
     {
         get => _isSignUpMode;
@@ -254,11 +262,11 @@ public sealed class MainViewModel : ViewModelBase
             ForgotPasswordCommand.RaiseCanExecuteChanged();
         }
     }
-    public string AuthHeading => IsSignUpMode ? "Create your workspace" : "Welcome back";
-    public string AuthSubheading => IsSignUpMode ? "A quieter way to remember every meeting." : "Your meetings, speakers, and next steps in one calm place.";
-    public string AuthSubmitLabel => IsAuthenticating ? "Connecting…" : (IsSignUpMode ? "Create account" : "Sign in");
-    public string AuthSwitchLabel => IsSignUpMode ? "Already have an account? Sign in" : "New here? Create a workspace";
-    public string AuthInfo { get => _authInfo; private set => SetProperty(ref _authInfo, value); }
+    public string AuthHeading => LocalizationService.Translate(IsSignUpMode ? "Create your workspace" : "Welcome back");
+    public string AuthSubheading => LocalizationService.Translate(IsSignUpMode ? "A quieter way to remember every meeting." : "Your meetings, speakers, and next steps in one calm place.");
+    public string AuthSubmitLabel => LocalizationService.Translate(IsAuthenticating ? "Connecting…" : (IsSignUpMode ? "Create account" : "Sign in"));
+    public string AuthSwitchLabel => LocalizationService.Translate(IsSignUpMode ? "Already have an account? Sign in" : "New here? Create a workspace");
+    public string AuthInfo { get => LocalizationService.Translate(_authInfo); private set => SetProperty(ref _authInfo, value); }
 
     public string SearchQuery
     {
@@ -267,15 +275,19 @@ public sealed class MainViewModel : ViewModelBase
         {
             if (!SetProperty(ref _searchQuery, value)) return;
             RefreshVisibleMeetings();
+            OnPropertyChanged(nameof(HasSearchQuery));
+            ClearSearchCommand.RaiseCanExecuteChanged();
         }
     }
+
+    public bool HasSearchQuery => !string.IsNullOrWhiteSpace(SearchQuery);
 
     public string RecordingTitle { get => _recordingTitle; set => SetProperty(ref _recordingTitle, value); }
     public string SelectedMicrophone { get => _selectedMicrophone; set => SetProperty(ref _selectedMicrophone, value); }
     public string SelectedSystemAudio { get => _selectedSystemAudio; set => SetProperty(ref _selectedSystemAudio, value); }
     public string SelectedQuality { get => _selectedQuality; set => SetProperty(ref _selectedQuality, value); }
     public bool KeepLocalCopy { get => _keepLocalCopy; set => SetProperty(ref _keepLocalCopy, value); }
-    public string DeviceTestStatus { get => _deviceTestStatus; private set => SetProperty(ref _deviceTestStatus, value); }
+    public string DeviceTestStatus { get => LocalizationService.Translate(_deviceTestStatus); private set => SetProperty(ref _deviceTestStatus, value); }
     public bool IsTestingDevices
     {
         get => _isTestingDevices;
@@ -312,14 +324,14 @@ public sealed class MainViewModel : ViewModelBase
         }
     }
     public bool IsStopping { get => _isStopping; private set => SetProperty(ref _isStopping, value); }
-    public string RecordingStatus { get => _recordingStatus; private set => SetProperty(ref _recordingStatus, value); }
+    public string RecordingStatus { get => LocalizationService.Translate(_recordingStatus); private set => SetProperty(ref _recordingStatus, value); }
     public string ElapsedLabel { get => _elapsedLabel; private set => SetProperty(ref _elapsedLabel, value); }
-    public string ActiveSpeaker { get => _activeSpeaker; private set => SetProperty(ref _activeSpeaker, value); }
+    public string ActiveSpeaker { get => LocalizationService.Translate(_activeSpeaker); private set => SetProperty(ref _activeSpeaker, value); }
     public double MicrophoneLevel { get => _microphoneLevel; private set => SetProperty(ref _microphoneLevel, value); }
     public double SystemAudioLevel { get => _systemAudioLevel; private set => SetProperty(ref _systemAudioLevel, value); }
-    public string RecordingIndicatorLabel => IsPaused ? "Recording paused" : "Recording live";
+    public string RecordingIndicatorLabel => LocalizationService.Translate(IsPaused ? "Recording paused" : "Recording live");
     public bool IsRecordingSurface => CurrentView == WorkspaceView.Recording;
-    public string CaptureProvider => _audio.CaptureProvider;
+    public string CaptureProvider => LocalizationService.Translate(_audio.CaptureProvider);
 
     public Meeting? CurrentMeeting
     {
@@ -331,10 +343,10 @@ public sealed class MainViewModel : ViewModelBase
             SaveMeetingCommand.RaiseCanExecuteChanged();
         }
     }
-    public string CurrentMeetingTitle => CurrentMeeting?.Title ?? "Meeting";
+    public string CurrentMeetingTitle => CurrentMeeting?.Title ?? LocalizationService.Translate("Meeting");
 
-    public string ProcessingStage { get => _processingStage; private set => SetProperty(ref _processingStage, value); }
-    public string ProcessingMessage { get => _processingMessage; private set => SetProperty(ref _processingMessage, value); }
+    public string ProcessingStage { get => LocalizationService.Translate(_processingStage); private set => SetProperty(ref _processingStage, value); }
+    public string ProcessingMessage { get => LocalizationService.Translate(_processingMessage); private set => SetProperty(ref _processingMessage, value); }
     public int ProcessingPercent { get => _processingPercent; private set => SetProperty(ref _processingPercent, value); }
     public int ProcessingStageIndex { get => _processingStageIndex; private set => SetProperty(ref _processingStageIndex, value); }
     public bool IsProcessing
@@ -378,13 +390,22 @@ public sealed class MainViewModel : ViewModelBase
             ThemeService.Apply(ThemeService.Parse(value));
         }
     }
+    public string SelectedLanguage
+    {
+        get => _selectedLanguage;
+        set
+        {
+            if (!SetProperty(ref _selectedLanguage, value)) return;
+            LocalizationService.SetLanguage(value == "English" ? "en" : "vi");
+        }
+    }
     public bool StartOnLogin { get => _startOnLogin; set => SetProperty(ref _startOnLogin, value); }
-    public string SettingsSyncDescription => SyncPaused ? "Meetings stay on this device until you turn sync back on." : "Cloud sync will run in the background when Firebase is connected.";
-    public string HotkeyStatus => _hotkey.IsRegistered ? "Registered · Ctrl + Shift + R" : "Unavailable · another app may own this shortcut";
+    public string SettingsSyncDescription => LocalizationService.Translate(SyncPaused ? "Meetings stay on this device until you turn sync back on." : "Cloud sync will run in the background when Firebase is connected.");
+    public string HotkeyStatus => LocalizationService.Translate(_hotkey.IsRegistered ? "Registered · Ctrl + Shift + R" : "Unavailable · another app may own this shortcut");
 
     public string ToastMessage
     {
-        get => _toastMessage;
+        get => LocalizationService.Translate(_toastMessage);
         private set
         {
             if (!SetProperty(ref _toastMessage, value)) return;
@@ -396,8 +417,8 @@ public sealed class MainViewModel : ViewModelBase
     public int MeetingCount => Meetings.Count;
     public int TodayCount => Meetings.Count(m => m.StartedAt.LocalDateTime.Date == DateTime.Today);
     public int ActionCount => Meetings.Sum(m => m.Summary?.ActionItems?.Count ?? 0);
-    public string LastSyncLabel => SyncPaused ? "Sync paused" : "Just now · local cache";
-    public string PageTitle => CurrentView switch
+    public string LastSyncLabel => LocalizationService.Translate(SyncPaused ? "Sync paused" : "Just now · local cache");
+    public string PageTitle => LocalizationService.Translate(CurrentView switch
     {
         WorkspaceView.Dashboard => "Meetings",
         WorkspaceView.Setup => "New recording",
@@ -407,8 +428,8 @@ public sealed class MainViewModel : ViewModelBase
         WorkspaceView.Speakers => "Speaker profiles",
         WorkspaceView.Settings => "Settings",
         _ => "Meeting Assistant"
-    };
-    public string PageDescription => CurrentView switch
+    });
+    public string PageDescription => LocalizationService.Translate(CurrentView switch
     {
         WorkspaceView.Dashboard => "A clear record of every conversation and what happens next.",
         WorkspaceView.Setup => "Choose what to capture. Nothing joins your call.",
@@ -418,7 +439,7 @@ public sealed class MainViewModel : ViewModelBase
         WorkspaceView.Speakers => "Keep names and voices consistent across your meetings.",
         WorkspaceView.Settings => "Tune capture, privacy, and your workspace preferences.",
         _ => ""
-    };
+    });
     public string MeetingsNavState => CurrentView is WorkspaceView.Dashboard or WorkspaceView.Setup or WorkspaceView.Recording or WorkspaceView.Processing or WorkspaceView.Detail ? "Selected" : "";
     public string SpeakersNavState => CurrentView == WorkspaceView.Speakers ? "Selected" : "";
     public string SettingsNavState => CurrentView == WorkspaceView.Settings ? "Selected" : "";
@@ -436,6 +457,21 @@ public sealed class MainViewModel : ViewModelBase
     public void RefreshSystemStatus()
     {
         OnPropertyChanged(nameof(HotkeyStatus));
+    }
+
+    private void OnLanguageChanged(object? sender, EventArgs e)
+    {
+        foreach (var propertyName in new[]
+        {
+            nameof(UserFirstName), nameof(SessionModeLabel), nameof(CloudStatusLabel), nameof(AuthError), nameof(AuthInfo),
+            nameof(AuthHeading), nameof(AuthSubheading), nameof(AuthSubmitLabel), nameof(AuthSwitchLabel), nameof(DeviceTestStatus),
+            nameof(RecordingStatus), nameof(ActiveSpeaker), nameof(RecordingIndicatorLabel), nameof(CaptureProvider),
+            nameof(CurrentMeetingTitle), nameof(ProcessingStage), nameof(ProcessingMessage), nameof(SettingsSyncDescription),
+            nameof(HotkeyStatus), nameof(ToastMessage), nameof(LastSyncLabel), nameof(PageTitle), nameof(PageDescription)
+        })
+        {
+            OnPropertyChanged(propertyName);
+        }
     }
 
     public void HandleGlobalHotkey()
@@ -820,6 +856,7 @@ public sealed class MainViewModel : ViewModelBase
     private async Task SaveSettingsAsync()
     {
         _savedPreferences.Theme = SelectedTheme;
+        _savedPreferences.Language = SelectedLanguage == "English" ? "en" : "vi";
         _savedPreferences.RetentionOption = RetentionOption;
         _savedPreferences.KeepLocalCopy = KeepLocalCopy;
         _savedPreferences.SyncPaused = SyncPaused;
@@ -837,5 +874,6 @@ public sealed class MainViewModel : ViewModelBase
         _hotkey.ToggleRecordingRequested -= OnGlobalHotkeyRequested;
         _processingCancellation?.Cancel();
         _processingCancellation?.Dispose();
+        LocalizationService.LanguageChanged -= OnLanguageChanged;
     }
 }

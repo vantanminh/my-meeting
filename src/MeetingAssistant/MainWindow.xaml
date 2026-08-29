@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:localization="clr-namespace:MeetingAssistant.Services"
         Title="Meeting Assistant"
         Width="1440" Height="900" MinWidth="860" MinHeight="600"
         WindowStyle="None" ResizeMode="CanResize"
@@ -10,11 +11,13 @@
         Loaded="Window_Loaded"
         SourceInitialized="Window_SourceInitialized"
         SizeChanged="Window_SizeChanged"
-        Closing="Window_Closing">
+        Closing="Window_Closing"
+        localization:LocalizationService.IsEnabled="True">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="48" ResizeBorderThickness="7" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False" />
     </shell:WindowChrome.WindowChrome>
     <Window.Resources>
+        <localization:LocalizedTextConverter x:Key="LocalizedTextConverter" />
         <Style x:Key="ViewSurface" TargetType="Grid">
             <Setter Property="Visibility" Value="Collapsed" />
         </Style>
@@ -81,7 +84,35 @@
         <Style x:Key="EmptyMeetingsSurface" TargetType="Border">
             <Setter Property="Visibility" Value="Collapsed" />
             <Style.Triggers>
-                <DataTrigger Binding="{Binding VisibleMeetings.Count}" Value="0"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding VisibleMeetings.Count}" Value="0" />
+                        <Condition Binding="{Binding IsLoadingMeetings}" Value="False" />
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Visibility" Value="Visible" />
+                </MultiDataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="LoadingMeetingsSurface" TargetType="Border">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsLoadingMeetings}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="SearchPlaceholderSurface" TargetType="TextBlock">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Setter Property="IsHitTestVisible" Value="False" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasSearchQuery}" Value="False"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="SearchClearButton" TargetType="Button" BasedOn="{StaticResource IconButton}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Setter Property="Width" Value="25" />
+            <Setter Property="Height" Value="25" />
+            <Setter Property="Padding" Value="0" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasSearchQuery}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
             </Style.Triggers>
         </Style>
         <Style x:Key="NotRecording" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
@@ -330,7 +361,9 @@
                                 <Border x:Name="SearchBorder" Background="{StaticResource SearchBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="9" Width="220" Height="38">
                                     <Grid>
                                         <TextBlock Text="⌕" FontSize="20" Foreground="{StaticResource SubtleBrush}" VerticalAlignment="Center" Margin="11,0,0,2" />
-                                        <TextBox Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}" Background="Transparent" BorderThickness="0" Padding="36,9,8,8" FontSize="12" Foreground="{StaticResource TextBrush}" />
+                                        <TextBlock Text="Search meetings..." Style="{StaticResource SearchPlaceholderSurface}" VerticalAlignment="Center" Margin="36,0,30,0" FontSize="12" Foreground="{StaticResource SubtleBrush}" />
+                                        <TextBox Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}" Background="Transparent" BorderThickness="0" Padding="36,9,32,8" FontSize="12" Foreground="{StaticResource TextBrush}" />
+                                        <Button Style="{StaticResource SearchClearButton}" Command="{Binding ClearSearchCommand}" Content="×" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,4,0" />
                                     </Grid>
                                 </Border>
                             </Grid>
@@ -441,6 +474,12 @@
                                     <TextBlock Text="Recent meetings" FontSize="18" FontWeight="SemiBold" />
                                     <TextBlock Text="{Binding VisibleMeetings.Count, StringFormat={}{0} conversations}" HorizontalAlignment="Right" FontSize="11" Foreground="{StaticResource SubtleBrush}" VerticalAlignment="Center" />
                                 </Grid>
+                                <Border Style="{StaticResource LoadingMeetingsSurface}" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="14" Padding="26" Margin="0,0,0,9">
+                                    <StackPanel HorizontalAlignment="Center">
+                                        <ProgressBar Width="180" IsIndeterminate="True" />
+                                        <TextBlock Text="Loading meetings..." FontSize="12" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" Margin="0,12,0,0" />
+                                    </StackPanel>
+                                </Border>
                                 <ItemsControl ItemsSource="{Binding VisibleMeetings}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
@@ -459,7 +498,7 @@
                                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                             <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                                             <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
-                                                                <TextBlock Text="{Binding DateLabel}" FontSize="11" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock Text="{Binding DateLabel, Converter={StaticResource LocalizedTextConverter}}" FontSize="11" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
                                                                 <TextBlock Text="  ·  " FontSize="11" Foreground="{StaticResource SubtleBrush}" />
                                                                 <TextBlock Text="{Binding DurationLabel}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
                                                                 <TextBlock Text="  ·  " FontSize="11" Foreground="{StaticResource SubtleBrush}" />
@@ -467,7 +506,7 @@
                                                             </StackPanel>
                                                         </StackPanel>
                                                         <Border Grid.Column="2" Background="{StaticResource MintDimBrush}" CornerRadius="12" Padding="9,5" VerticalAlignment="Center" Margin="12,0,16,0">
-                                                            <TextBlock Text="{Binding SyncStatus}" FontSize="10" Foreground="{StaticResource MintBrush}" />
+                                                            <TextBlock Text="{Binding SyncStatus, Converter={StaticResource LocalizedTextConverter}}" FontSize="10" Foreground="{StaticResource MintBrush}" />
                                                         </Border>
                                                         <TextBlock Grid.Column="3" Text="›" FontSize="24" Foreground="{StaticResource SubtleBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" />
                                                     </Grid>
@@ -913,6 +952,11 @@
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="240" /></Grid.ColumnDefinitions>
                                             <StackPanel><TextBlock Text="Theme" FontSize="12" /><TextBlock Text="Choose a comfortable light or dark workspace." FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" /></StackPanel>
                                             <ComboBox Grid.Column="1" ItemsSource="{Binding ThemeOptions}" SelectedItem="{Binding SelectedTheme}" />
+                                        </Grid>
+                                        <Grid Margin="0,14,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="240" /></Grid.ColumnDefinitions>
+                                            <StackPanel><TextBlock Text="Language" FontSize="12" /><TextBlock Text="Use Vietnamese or English throughout the app." FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" /></StackPanel>
+                                            <ComboBox Grid.Column="1" ItemsSource="{Binding LanguageOptions}" SelectedItem="{Binding SelectedLanguage}" />
                                         </Grid>
                                     </StackPanel>
                                 </Border>
