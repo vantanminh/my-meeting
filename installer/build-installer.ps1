@@ -37,10 +37,11 @@ $iscc = Get-Command iscc -ErrorAction SilentlyContinue
 if ($null -eq $iscc) {
     $knownPaths = @(
         "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
-        "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+        "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",
+        "${env:LOCALAPPDATA}\Programs\Inno Setup 6\ISCC.exe"
     ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
     if ($knownPaths.Count -gt 0) {
-        $isccPath = $knownPaths[0]
+        $isccPath = @($knownPaths)[0]
     }
     else {
         Write-Warning "Inno Setup compiler was not found. Install it with: winget install --id JRSoftware.InnoSetup -e"
