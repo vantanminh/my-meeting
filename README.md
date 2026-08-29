@@ -32,7 +32,8 @@ The UI depends on small service contracts for auth, meeting persistence, audio c
 - `WindowsAudioCaptureService` captures separate WAV tracks with WASAPI and falls back to `DemoAudioCaptureService` when device access is unavailable.
 - `JsonMeetingRepository` is atomic local JSON persistence with starter meetings for a new workspace.
 - `DemoMeetingIntelligenceService` provides deterministic local processing so every UI state can be exercised.
-- `LocalAuthService` and `LocalCloudSyncService` provide offline-first behavior. Firebase Auth/Firestore and hosted STT/AI providers can replace these adapters without changing the view model or screens.
+- `LocalAuthService` and `LocalCloudSyncService` provide offline-first behavior. The included Firebase Auth/Firestore adapters activate from package-time configuration without changing the view model or screens.
+- Firebase sync restores the signed-in user's meetings at startup, writes new meetings and edits to `users/{uid}/meetings/{meetingId}`, and keeps the local JSON cache as the recovery path when the network is unavailable.
 
 To turn on the included Firebase REST adapters for a local run, set the public Firebase Web API key and project id in the process environment (never commit them to source):
 

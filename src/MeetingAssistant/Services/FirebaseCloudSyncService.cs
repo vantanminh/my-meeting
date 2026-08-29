@@ -193,7 +193,7 @@ public sealed class FirebaseCloudSyncService : ICloudSyncService
 
     private static string? ReadString(JsonElement fields, string propertyName)
         => fields.TryGetProperty(propertyName, out var field) && field.TryGetProperty("stringValue", out var value)
-            ? value.GetString()
+            ? value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString()
             : null;
 
     private static double ReadNumber(JsonElement fields, string propertyName)
@@ -202,11 +202,11 @@ public sealed class FirebaseCloudSyncService : ICloudSyncService
         if (field.TryGetProperty("doubleValue", out var doubleValue))
         {
             if (doubleValue.ValueKind == JsonValueKind.Number && doubleValue.TryGetDouble(out var number)) return number;
-            if (double.TryParse(doubleValue.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out number)) return number;
+            if (double.TryParse(doubleValue.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out number)) return number;
         }
 
         if (field.TryGetProperty("integerValue", out var integerValue)
-            && long.TryParse(integerValue.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer))
+            && long.TryParse(integerValue.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer))
             return integer;
         return 0;
     }
@@ -215,7 +215,7 @@ public sealed class FirebaseCloudSyncService : ICloudSyncService
     {
         if (!fields.TryGetProperty(propertyName, out var field)
             || !field.TryGetProperty("timestampValue", out var value)
-            || !DateTimeOffset.TryParse(value.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var timestamp))
+            || !DateTimeOffset.TryParse(value.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var timestamp))
             return null;
         return timestamp;
     }

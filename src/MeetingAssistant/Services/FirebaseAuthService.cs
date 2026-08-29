@@ -189,6 +189,10 @@ public sealed class FirebaseAuthService : IAuthService
         {
             return null;
         }
+        catch (TaskCanceledException)
+        {
+            return null;
+        }
     }
 
     private static string FirebaseError(string body)
