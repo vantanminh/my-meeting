@@ -44,6 +44,15 @@ dotnet run --project src/MeetingAssistant/MeetingAssistant.csproj
 
 Without both values, the app intentionally stays in local mode and offers the offline workspace.
 
+Before sharing a Firebase-backed build, enable Email/Password under Firebase Authentication, create the Firestore database, and deploy the user-scoped rules from the repository after selecting the intended project:
+
+```powershell
+$env:MEETING_ASSISTANT_FIREBASE_PROJECT_ID = "your-project-id"
+.\firebase\deploy-rules.ps1
+```
+
+The rules allow an authenticated user to read and write only `users/{uid}/meetings/*`.
+
 ## OpenAI transcription and summaries
 
 The Settings page can save the OpenAI key to the current Windows user's environment and choose the models used for transcription and summaries. The app reads these variables (the scoped key takes precedence):
