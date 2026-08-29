@@ -5,3 +5,10 @@
 harness.db
 harness.db-wal
 harness.db-shm
+
+# .NET build output
+**/bin/
+**/obj/
+
+# Local runtime data
+*.user
