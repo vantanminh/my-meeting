@@ -44,6 +44,24 @@ dotnet run --project src/MeetingAssistant/MeetingAssistant.csproj
 
 Without both values, the app intentionally stays in local mode and offers the offline workspace.
 
+## Build a shareable installer
+
+The installer is self-contained, so another Windows machine does not need the .NET runtime. Firebase's Web API key and project id are written into `firebase.config.json` inside the package at build time. They are public Firebase client configuration values, but should still be supplied through environment variables rather than committed:
+
+```powershell
+$env:MEETING_ASSISTANT_FIREBASE_API_KEY = "your-web-api-key"
+$env:MEETING_ASSISTANT_FIREBASE_PROJECT_ID = "your-project-id"
+.\installer\build-installer.ps1
+```
+
+Install Inno Setup first if the script reports that `ISCC.exe` is missing:
+
+```powershell
+winget install --id JRSoftware.InnoSetup -e
+```
+
+The generated installer is `dist\MeetingAssistant-Setup.exe`. Do not put an OpenAI API key in this installer; each user sets their own key from Settings.
+
 ## Verification
 
 Run the deterministic smoke checks:

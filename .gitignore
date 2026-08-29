@@ -12,3 +12,8 @@ harness.db-shm
 
 # Local runtime data
 *.user
+
+# Packaged Firebase configuration contains project-specific values
+firebase.config.json
+installer/firebase.config.json
+dist/
