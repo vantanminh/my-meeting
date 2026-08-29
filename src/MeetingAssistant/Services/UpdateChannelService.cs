@@ -283,6 +283,7 @@ public sealed class UpdateChannelService : IUpdateChannelService
         "/NORESTART",
         "/SP-",
         "/CLOSEAPPLICATIONS",
+        "/FORCECLOSEAPPLICATIONS",
         "/RESTARTAPPLICATIONS"
     ];
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)

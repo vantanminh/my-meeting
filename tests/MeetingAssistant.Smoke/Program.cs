@@ -276,6 +276,7 @@ try
                 "/NORESTART",
                 "/SP-",
                 "/CLOSEAPPLICATIONS",
+                "/FORCECLOSEAPPLICATIONS",
                 "/RESTARTAPPLICATIONS"
             };
             if (!installerLauncher.Arguments.SequenceEqual(expectedInstallerArguments))

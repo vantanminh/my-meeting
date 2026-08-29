@@ -21,7 +21,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 UninstallDisplayIcon={app}\{#AppExeName}
 WizardStyle=modern
-CloseApplications=yes
+; The executable can still be held briefly while an automatic update requests shutdown.
+; Force-close lets Inno Setup release the file before copying the new package.
+CloseApplications=force
 RestartApplications=yes
 
 [Languages]
