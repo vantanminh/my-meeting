@@ -103,17 +103,27 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
         return new ProcessingResult(meeting);
     }
 
-    public async Task<OpenAiConnectionResult> TestConnectionAsync(CancellationToken cancellationToken = default)
+    public Task<OpenAiConnectionResult> TestConnectionAsync(CancellationToken cancellationToken = default)
+        => TestConnectionAsync(apiKeyOverride: null, cancellationToken: cancellationToken);
+
+    public async Task<OpenAiConnectionResult> TestConnectionAsync(
+        string? apiKeyOverride,
+        CancellationToken cancellationToken = default)
     {
-        if (!_configuration.IsConfigured)
+        var apiKey = string.IsNullOrWhiteSpace(apiKeyOverride)
+            ? _configuration.ApiKey
+            : apiKeyOverride.Trim();
+        if (string.IsNullOrWhiteSpace(apiKey))
             return new(false, "Enter an OpenAI API key first.");
+        if (apiKey.Any(char.IsControl))
+            return new(false, "The OpenAI API key format is invalid.");
 
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(_connectionTimeout);
             using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.openai.com/v1/models");
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _configuration.ApiKey);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
             using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             if (response.IsSuccessStatusCode)
                 return new(true, "OpenAI connection is ready.");
@@ -123,6 +133,10 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
         catch (HttpRequestException)
         {
             return new(false, "OpenAI is not reachable. Check the network and try again.");
+        }
+        catch (FormatException)
+        {
+            return new(false, "The OpenAI API key format is invalid.");
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

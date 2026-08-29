@@ -101,7 +101,8 @@ try
     var fakeSystemAudioPath = Path.Combine(fakeAudioDirectory, "system-audio.wav");
     await File.WriteAllBytesAsync(fakeMicrophonePath, new byte[128]);
     await File.WriteAllBytesAsync(fakeSystemAudioPath, new byte[128]);
-    using (var fakeHttpClient = new HttpClient(new FakeOpenAiHandler()))
+    var fakeHttpHandler = new FakeOpenAiHandler();
+    using (var fakeHttpClient = new HttpClient(fakeHttpHandler))
     {
         var fakeOpenAi = new OpenAiMeetingIntelligenceService(
             new OpenAiConfiguration("test-key", "gpt-4o-transcribe", "gpt-4.1-mini"),
@@ -122,8 +123,23 @@ try
 
         var connection = await fakeOpenAi.TestConnectionAsync();
         if (!connection.Success) failures.Add("OpenAI connection test should accept a reachable API");
+
+        var pendingConnection = await fakeOpenAi.TestConnectionAsync(apiKeyOverride: "pending-key");
+        if (!pendingConnection.Success || fakeHttpHandler.LastAuthorization != "pending-key")
+            failures.Add("OpenAI connection test should use the key currently entered in Settings");
     }
     Directory.Delete(fakeAudioDirectory, recursive: true);
+
+    var testEnvironment = new InMemoryUserEnvironmentStore();
+    var savedOpenAiConfiguration = new OpenAiConfiguration(userEnvironment: testEnvironment);
+    await savedOpenAiConfiguration.SaveUserEnvironmentAsync(" saved-key ", " saved-transcription ", " saved-summary ");
+    if (testEnvironment.Get(OpenAiConfiguration.ScopedApiKeyEnvironmentVariable) != "saved-key"
+        || savedOpenAiConfiguration.ApiKey != "saved-key"
+        || savedOpenAiConfiguration.TranscriptionModel != "saved-transcription"
+        || savedOpenAiConfiguration.SummaryModel != "saved-summary")
+    {
+        failures.Add("OpenAI settings should persist trimmed values and reload them from the user environment");
+    }
 
     using (var hangingHttpClient = new HttpClient(new HangingOpenAiHandler()))
     {
@@ -217,8 +233,12 @@ return 0;
 
 sealed class FakeOpenAiHandler : HttpMessageHandler
 {
+    public string? LastAuthorization { get; private set; }
+
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        LastAuthorization = request.Headers.Authorization?.Parameter;
+
         if (request.RequestUri?.AbsolutePath == "/v1/audio/transcriptions")
         {
             await request.Content!.ReadAsByteArrayAsync(cancellationToken);
@@ -251,6 +271,15 @@ sealed class FakeOpenAiHandler : HttpMessageHandler
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
+}
+
+sealed class InMemoryUserEnvironmentStore : IUserEnvironmentStore
+{
+    private readonly Dictionary<string, string> _values = new(StringComparer.OrdinalIgnoreCase);
+
+    public string? Get(string name) => _values.TryGetValue(name, out var value) ? value : null;
+    public void Set(string name, string value) => _values[name] = value;
+    public void Delete(string name) => _values.Remove(name);
 }
 
 sealed class HangingOpenAiHandler : HttpMessageHandler

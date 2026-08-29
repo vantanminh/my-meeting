@@ -112,6 +112,7 @@ public sealed class MainViewModel : ViewModelBase
     private bool _syncPaused;
     private bool _startOnLogin = true;
     private bool _isTestingOpenAi;
+    private bool _isSavingSettings;
     private bool _isCheckingForUpdates;
     private bool _isInstallingUpdate;
 
@@ -183,9 +184,9 @@ public sealed class MainViewModel : ViewModelBase
         SaveMeetingCommand = new AsyncRelayCommand(SaveMeetingAsync, () => CurrentMeeting is not null);
         SetTranscriptFilterCommand = new RelayCommand(parameter => SetTranscriptFilter(parameter as string ?? "All speakers"));
         SaveSpeakerCommand = new AsyncRelayCommand(SaveSpeakerAsync, () => true);
-        SaveSettingsCommand = new AsyncRelayCommand(SaveSettingsAsync);
+        SaveSettingsCommand = new AsyncRelayCommand(SaveSettingsAsync, () => !IsSavingSettings && !IsTestingOpenAi);
         ClearSearchCommand = new RelayCommand(_ => SearchQuery = string.Empty, _ => HasSearchQuery);
-        TestOpenAiCommand = new AsyncRelayCommand(TestOpenAiAsync, () => !IsTestingOpenAi);
+        TestOpenAiCommand = new AsyncRelayCommand(TestOpenAiAsync, () => !IsTestingOpenAi && !IsSavingSettings);
         CheckForUpdatesCommand = new AsyncRelayCommand(CheckForUpdatesAsync, () => !IsCheckingForUpdates && !IsInstallingUpdate);
         InstallUpdateCommand = new AsyncRelayCommand(InstallUpdateAsync, () => HasAvailableUpdate && !IsCheckingForUpdates && !IsInstallingUpdate);
     }
@@ -446,6 +447,17 @@ public sealed class MainViewModel : ViewModelBase
         private set
         {
             if (!SetProperty(ref _isTestingOpenAi, value)) return;
+            TestOpenAiCommand.RaiseCanExecuteChanged();
+            SaveSettingsCommand.RaiseCanExecuteChanged();
+        }
+    }
+    public bool IsSavingSettings
+    {
+        get => _isSavingSettings;
+        private set
+        {
+            if (!SetProperty(ref _isSavingSettings, value)) return;
+            SaveSettingsCommand.RaiseCanExecuteChanged();
             TestOpenAiCommand.RaiseCanExecuteChanged();
         }
     }
@@ -972,23 +984,46 @@ public sealed class MainViewModel : ViewModelBase
 
     private async Task SaveSettingsAsync()
     {
-        if (!string.IsNullOrWhiteSpace(OpenAiApiKeyInput))
-            _openAi.SaveUserEnvironment(OpenAiApiKeyInput, OpenAiTranscriptionModel, OpenAiSummaryModel);
+        if (IsSavingSettings) return;
 
-        _savedPreferences.Theme = SelectedTheme;
-        _savedPreferences.Language = SelectedLanguage == "English" ? "en" : "vi";
-        _savedPreferences.RetentionOption = RetentionOption;
-        _savedPreferences.KeepLocalCopy = KeepLocalCopy;
-        _savedPreferences.SyncPaused = SyncPaused;
-        _savedPreferences.StartOnLogin = StartOnLogin;
-        _savedPreferences.TranscriptionModel = OpenAiTranscriptionModel;
-        _savedPreferences.SummaryModel = OpenAiSummaryModel;
-        await _preferences.SaveAsync(_savedPreferences);
-        OnPropertyChanged(nameof(HotkeyStatus));
-        OnPropertyChanged(nameof(SettingsSyncDescription));
-        OnPropertyChanged(nameof(OpenAiKeyStatus));
-        OnPropertyChanged(nameof(OpenAiProviderLabel));
-        ToastMessage = "Settings saved · your preferences apply to the next recording";
+        IsSavingSettings = true;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(OpenAiApiKeyInput))
+            {
+                await _openAi.SaveUserEnvironmentAsync(
+                    OpenAiApiKeyInput,
+                    OpenAiTranscriptionModel,
+                    OpenAiSummaryModel);
+            }
+
+            _savedPreferences.Theme = SelectedTheme;
+            _savedPreferences.Language = SelectedLanguage == "English" ? "en" : "vi";
+            _savedPreferences.RetentionOption = RetentionOption;
+            _savedPreferences.KeepLocalCopy = KeepLocalCopy;
+            _savedPreferences.SyncPaused = SyncPaused;
+            _savedPreferences.StartOnLogin = StartOnLogin;
+            _savedPreferences.TranscriptionModel = OpenAiTranscriptionModel;
+            _savedPreferences.SummaryModel = OpenAiSummaryModel;
+            await _preferences.SaveAsync(_savedPreferences);
+            OnPropertyChanged(nameof(HotkeyStatus));
+            OnPropertyChanged(nameof(SettingsSyncDescription));
+            OnPropertyChanged(nameof(OpenAiKeyStatus));
+            OnPropertyChanged(nameof(OpenAiProviderLabel));
+            ToastMessage = "Settings saved · your preferences apply to the next recording";
+        }
+        catch (TimeoutException)
+        {
+            ToastMessage = "Could not save settings in time. Try again.";
+        }
+        catch (Exception)
+        {
+            ToastMessage = "Could not save settings. Check your Windows profile and try again.";
+        }
+        finally
+        {
+            IsSavingSettings = false;
+        }
     }
 
     private async Task TestOpenAiAsync()
@@ -997,10 +1032,8 @@ public sealed class MainViewModel : ViewModelBase
         OpenAiConnectionStatus = "Testing OpenAI connection…";
         try
         {
-            if (!string.IsNullOrWhiteSpace(OpenAiApiKeyInput))
-                _openAi.SaveUserEnvironment(OpenAiApiKeyInput, OpenAiTranscriptionModel, OpenAiSummaryModel);
-
-            var result = await _openAiIntelligence.TestConnectionAsync();
+            var pendingApiKey = string.IsNullOrWhiteSpace(OpenAiApiKeyInput) ? null : OpenAiApiKeyInput;
+            var result = await _openAiIntelligence.TestConnectionAsync(apiKeyOverride: pendingApiKey);
             OpenAiConnectionStatus = result.Message;
             OnPropertyChanged(nameof(OpenAiKeyStatus));
             OnPropertyChanged(nameof(OpenAiProviderLabel));
@@ -1008,6 +1041,14 @@ public sealed class MainViewModel : ViewModelBase
         catch (HttpRequestException)
         {
             OpenAiConnectionStatus = "OpenAI is not reachable. Check the network and try again.";
+        }
+        catch (TimeoutException)
+        {
+            OpenAiConnectionStatus = "OpenAI took too long to respond.";
+        }
+        catch (Exception)
+        {
+            OpenAiConnectionStatus = "Could not test OpenAI. Check the key and try again.";
         }
         finally
         {
