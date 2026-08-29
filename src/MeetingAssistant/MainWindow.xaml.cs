@@ -31,6 +31,7 @@ public partial class MainWindow : Window
     {
         ApplyResponsiveLayout(ActualWidth, ActualHeight);
         await ViewModel.InitializeAsync();
+        LocalizationService.Refresh();
     }
 
     private void Window_SourceInitialized(object? sender, EventArgs e)
@@ -54,6 +55,7 @@ public partial class MainWindow : Window
         {
             ContentScrollViewer.ScrollToTop();
             AuthScrollViewer.ScrollToTop();
+            LocalizationService.Refresh();
         }), DispatcherPriority.Loaded);
     }
 

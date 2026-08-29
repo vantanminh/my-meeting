@@ -292,6 +292,25 @@ public static class LocalizationService
         return Vietnamese.TryGetValue(value, out var translated) ? translated : value;
     }
 
+    public static void Refresh()
+    {
+        List<FrameworkElement> roots;
+        lock (RootLock)
+        {
+            roots = Roots.Select(reference => reference.TryGetTarget(out var root) ? root : null)
+                .Where(root => root is not null)
+                .Cast<FrameworkElement>()
+                .ToList();
+            Roots.RemoveAll(reference => !reference.TryGetTarget(out _));
+        }
+
+        foreach (var root in roots)
+        {
+            if (root.Dispatcher.CheckAccess()) ApplyTo(root);
+            else _ = root.Dispatcher.BeginInvoke(new Action(() => ApplyTo(root)), DispatcherPriority.Loaded);
+        }
+    }
+
     private static void OnIsEnabledChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs args)
     {
         if (dependencyObject is not FrameworkElement element) return;
