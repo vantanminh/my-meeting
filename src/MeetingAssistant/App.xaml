@@ -20,6 +20,58 @@
         <SolidColorBrush x:Key="CoralDimBrush" Color="#492C32" />
         <SolidColorBrush x:Key="GoldBrush" Color="#F3C878" />
         <SolidColorBrush x:Key="GoldDimBrush" Color="#453922" />
+        <SolidColorBrush x:Key="WindowChromeBrush" Color="#0A0F18" />
+        <SolidColorBrush x:Key="WindowBorderBrush" Color="#182333" />
+        <SolidColorBrush x:Key="BrandInkBrush" Color="#081A15" />
+        <SolidColorBrush x:Key="HoverBrush" Color="#24334B" />
+        <SolidColorBrush x:Key="HoverBorderBrush" Color="#3A506F" />
+        <SolidColorBrush x:Key="NavHoverBrush" Color="#19283B" />
+        <SolidColorBrush x:Key="DangerBorderBrush" Color="#73444B" />
+        <SolidColorBrush x:Key="InputBrush" Color="#0F1725" />
+        <SolidColorBrush x:Key="PopupBorderBrush" Color="#3A4B68" />
+        <SolidColorBrush x:Key="InputHoverBrush" Color="#152238" />
+        <SolidColorBrush x:Key="ProgressBrush" Color="#26344A" />
+        <SolidColorBrush x:Key="ScrollThumbBrush" Color="#3A4F70" />
+        <SolidColorBrush x:Key="ScrollTrackBrush" Color="#0D1522" />
+        <SolidColorBrush x:Key="BadgeBrush" Color="#293A55" />
+        <SolidColorBrush x:Key="DividerBrush" Color="#1F2C3F" />
+        <SolidColorBrush x:Key="StatusCardBrush" Color="#121C2B" />
+        <SolidColorBrush x:Key="StatusCardBorderBrush" Color="#1E2D43" />
+        <SolidColorBrush x:Key="SearchBrush" Color="#0E1623" />
+        <SolidColorBrush x:Key="HeaderBorderBrush" Color="#202D40" />
+        <SolidColorBrush x:Key="SyncBadgeBrush" Color="#17263A" />
+        <SolidColorBrush x:Key="HeroStartBrush" Color="#173A3A" />
+        <SolidColorBrush x:Key="HeroMiddleBrush" Color="#192B3E" />
+        <SolidColorBrush x:Key="HeroEndBrush" Color="#1C2334" />
+        <SolidColorBrush x:Key="HeroBadgeBrush" Color="#23514B" />
+        <SolidColorBrush x:Key="HeroCopyBrush" Color="#B3C4D0" />
+        <SolidColorBrush x:Key="HeroRingBrush" Color="#3AA999" />
+        <SolidColorBrush x:Key="HeroRingBrightBrush" Color="#65DFBF" />
+        <SolidColorBrush x:Key="HeroCoreBrush" Color="#64DDBD" />
+        <SolidColorBrush x:Key="HeroCoreInkBrush" Color="#0D3D35" />
+        <SolidColorBrush x:Key="HeroTagBrush" Color="#213B51" />
+        <SolidColorBrush x:Key="HeroTagTextBrush" Color="#A6C7D4" />
+        <SolidColorBrush x:Key="HeroTagAltBrush" Color="#284649" />
+        <SolidColorBrush x:Key="PrivacyCardBrush" Color="#14222D" />
+        <SolidColorBrush x:Key="PrivacyCopyBrush" Color="#C0D1D5" />
+        <SolidColorBrush x:Key="PrivacyDotBrush" Color="#123C31" />
+        <SolidColorBrush x:Key="SetupCardBrush" Color="#18263B" />
+        <SolidColorBrush x:Key="SetupCardBorderBrush" Color="#2B4163" />
+        <SolidColorBrush x:Key="DetailCardBrush" Color="#1B2C3E" />
+        <SolidColorBrush x:Key="DetailCardBorderBrush" Color="#2A4962" />
+        <SolidColorBrush x:Key="TranscriptIconBrush" Color="#24404A" />
+        <SolidColorBrush x:Key="EditorTextBrush" Color="#C3CDDA" />
+        <SolidColorBrush x:Key="ImportantCardBrush" Color="#172033" />
+        <SolidColorBrush x:Key="ImportantCardBorderBrush" Color="#2D3F5A" />
+        <SolidColorBrush x:Key="SpeakerHintBrush" Color="#14232E" />
+        <SolidColorBrush x:Key="SpeakerHintBorderBrush" Color="#2B4D51" />
+        <SolidColorBrush x:Key="SpeakerProfileHintBrush" Color="#111A29" />
+        <SolidColorBrush x:Key="SpeakerProfileHintBorderBrush" Color="#263750" />
+        <SolidColorBrush x:Key="ToastBrush" Color="#1D3434" />
+        <SolidColorBrush x:Key="ToastBorderBrush" Color="#306462" />
+        <Color x:Key="HeroStartColor">#173A3A</Color>
+        <Color x:Key="HeroMiddleColor">#192B3E</Color>
+        <Color x:Key="HeroEndColor">#1C2334</Color>
 
         <Style TargetType="TextBlock">
             <Setter Property="FontFamily" Value="Segoe UI" />
@@ -48,8 +100,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Background" Value="#24334B" />
-                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#3A506F" />
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{StaticResource HoverBrush}" />
+                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{StaticResource HoverBorderBrush}" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.82" />
@@ -65,21 +117,21 @@
 
         <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background" Value="{StaticResource MintBrush}" />
-            <Setter Property="Foreground" Value="#071713" />
+            <Setter Property="Foreground" Value="{StaticResource BrandInkBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource MintBrush}" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Padding" Value="18,11" />
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#8AF0D4" />
-                    <Setter Property="BorderBrush" Value="#8AF0D4" />
+                    <Setter Property="Background" Value="{StaticResource MintBrush}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource MintBrush}" />
                 </Trigger>
             </Style.Triggers>
         </Style>
 
         <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background" Value="{StaticResource CardAltBrush}" />
-            <Setter Property="BorderBrush" Value="#3A4B68" />
+            <Setter Property="BorderBrush" Value="{StaticResource PopupBorderBrush}" />
         </Style>
 
         <Style x:Key="GhostButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
@@ -110,7 +162,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="NavBorder" Property="Background" Value="#19283B" />
+                                <Setter TargetName="NavBorder" Property="Background" Value="{StaticResource NavHoverBrush}" />
                                 <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
                             </Trigger>
                             <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Tag}" Value="Selected">
@@ -125,7 +177,7 @@
 
         <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background" Value="{StaticResource CoralDimBrush}" />
-            <Setter Property="BorderBrush" Value="#73444B" />
+            <Setter Property="BorderBrush" Value="{StaticResource DangerBorderBrush}" />
             <Setter Property="Foreground" Value="{StaticResource CoralBrush}" />
         </Style>
 
@@ -133,7 +185,7 @@
             <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="FontSize" Value="14" />
             <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-            <Setter Property="Background" Value="#0F1725" />
+            <Setter Property="Background" Value="{StaticResource InputBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="12,10" />
@@ -144,7 +196,7 @@
             <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="FontSize" Value="14" />
             <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-            <Setter Property="Background" Value="#0F1725" />
+            <Setter Property="Background" Value="{StaticResource InputBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="12,10" />
@@ -154,7 +206,7 @@
             <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="FontSize" Value="14" />
             <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-            <Setter Property="Background" Value="#0F1725" />
+            <Setter Property="Background" Value="{StaticResource InputBrush}" />
             <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="10,8" />
@@ -180,7 +232,7 @@
                             </Border>
                             <Popup x:Name="Popup" Placement="Bottom" AllowsTransparency="True" Focusable="False"
                                    IsOpen="{TemplateBinding IsDropDownOpen}" PopupAnimation="Slide">
-                                <Border Background="{StaticResource CardBrush}" BorderBrush="#3A4B68" BorderThickness="1"
+                                <Border Background="{StaticResource CardBrush}" BorderBrush="{StaticResource PopupBorderBrush}" BorderThickness="1"
                                         CornerRadius="8" Padding="4" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
                                     <ScrollViewer MaxHeight="{TemplateBinding MaxDropDownHeight}" CanContentScroll="True">
                                         <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
@@ -190,8 +242,8 @@
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ComboBorder" Property="Background" Value="#152238" />
-                                <Setter TargetName="ComboBorder" Property="BorderBrush" Value="#3A506F" />
+                                <Setter TargetName="ComboBorder" Property="Background" Value="{StaticResource InputHoverBrush}" />
+                                <Setter TargetName="ComboBorder" Property="BorderBrush" Value="{StaticResource HoverBorderBrush}" />
                             </Trigger>
                             <Trigger Property="IsKeyboardFocusWithin" Value="True">
                                 <Setter TargetName="ComboBorder" Property="BorderBrush" Value="{StaticResource MintBrush}" />
@@ -226,7 +278,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="ItemBorder" Property="Background" Value="#24334B" />
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource HoverBrush}" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource MintDimBrush}" />
@@ -240,7 +292,7 @@
 
         <Style TargetType="ProgressBar">
             <Setter Property="Height" Value="7" />
-            <Setter Property="Background" Value="#26344A" />
+            <Setter Property="Background" Value="{StaticResource ProgressBrush}" />
             <Setter Property="Foreground" Value="{StaticResource MintBrush}" />
         </Style>
 
@@ -260,17 +312,17 @@
 
         <Style x:Key="ScrollBarThumb" TargetType="Thumb">
             <Setter Property="Focusable" Value="False" />
-            <Setter Property="Background" Value="#3A4F70" />
+            <Setter Property="Background" Value="{StaticResource ScrollThumbBrush}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Thumb">
                         <Border x:Name="ThumbBorder" Background="{TemplateBinding Background}" CornerRadius="5" Margin="1,2" />
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ThumbBorder" Property="Background" Value="#66E3C0" />
+                                <Setter TargetName="ThumbBorder" Property="Background" Value="{StaticResource MintBrush}" />
                             </Trigger>
                             <Trigger Property="IsDragging" Value="True">
-                                <Setter TargetName="ThumbBorder" Property="Background" Value="#88A9FF" />
+                                <Setter TargetName="ThumbBorder" Property="Background" Value="{StaticResource BlueBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -281,7 +333,7 @@
         <Style TargetType="ScrollBar">
             <Setter Property="OverridesDefaultStyle" Value="True" />
             <Setter Property="Width" Value="11" />
-            <Setter Property="Background" Value="#0D1522" />
+            <Setter Property="Background" Value="{StaticResource ScrollTrackBrush}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ScrollBar">

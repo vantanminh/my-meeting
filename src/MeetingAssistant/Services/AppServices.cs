@@ -7,6 +7,7 @@ public sealed class AppServices : IDisposable
         var firebaseConfiguration = new FirebaseConfiguration();
         var localAuth = new LocalAuthService();
         AuthService = new FirebaseAuthService(firebaseConfiguration, localAuth);
+        Preferences = new JsonUserPreferencesStore();
         MeetingRepository = new JsonMeetingRepository();
         AudioCaptureService = new WindowsAudioCaptureService();
         IntelligenceService = new DemoMeetingIntelligenceService();
@@ -16,6 +17,7 @@ public sealed class AppServices : IDisposable
     }
 
     public IAuthService AuthService { get; }
+    public JsonUserPreferencesStore Preferences { get; }
     public IMeetingRepository MeetingRepository { get; }
     public IAudioCaptureService AudioCaptureService { get; }
     public IMeetingIntelligenceService IntelligenceService { get; }

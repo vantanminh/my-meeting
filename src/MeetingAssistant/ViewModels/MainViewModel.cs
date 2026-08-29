@@ -52,6 +52,8 @@ public sealed class MainViewModel : ViewModelBase
     private readonly IMeetingIntelligenceService _intelligence;
     private readonly ICloudSyncService _cloud;
     private readonly IGlobalHotkeyService _hotkey;
+    private readonly JsonUserPreferencesStore _preferences;
+    private readonly UserPreferences _savedPreferences;
     private readonly DispatcherTimer _recordingTimer;
     private CancellationTokenSource? _processingCancellation;
     private RecordingData? _lastRecording;
@@ -77,6 +79,7 @@ public sealed class MainViewModel : ViewModelBase
     private string _transcriptSpeakerFilter = "All speakers";
     private string _toastMessage = string.Empty;
     private string _retentionOption = "Keep recordings for 30 days";
+    private string _selectedTheme = nameof(ThemeMode.Dark);
     private double _microphoneLevel;
     private double _systemAudioLevel;
     private int _processingPercent;
@@ -105,6 +108,15 @@ public sealed class MainViewModel : ViewModelBase
         _intelligence = services.IntelligenceService;
         _cloud = services.CloudSyncService;
         _hotkey = services.HotkeyService;
+        _preferences = services.Preferences;
+        _savedPreferences = _preferences.Load();
+        _selectedTheme = ThemeService.Parse(_savedPreferences.Theme).ToString();
+        _retentionOption = _savedPreferences.RetentionOption;
+        _keepLocalCopy = _savedPreferences.KeepLocalCopy;
+        _syncPaused = _savedPreferences.SyncPaused;
+        _startOnLogin = _savedPreferences.StartOnLogin;
+        _cloud.IsPaused = _syncPaused;
+        ThemeService.Apply(ThemeService.Parse(_selectedTheme));
 
         _recordingTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _recordingTimer.Tick += (_, _) => UpdateRecordingClock();
@@ -117,6 +129,7 @@ public sealed class MainViewModel : ViewModelBase
         SystemAudioOptions = ["Default system audio", "All system audio", "Meeting app audio only"];
         QualityOptions = ["Balanced · 48 kHz", "High quality · 48 kHz", "Compact · 16 kHz"];
         RetentionOptions = ["Keep recordings for 7 days", "Keep recordings for 30 days", "Keep recordings until deleted"];
+        ThemeOptions = [nameof(ThemeMode.Dark), nameof(ThemeMode.Light)];
         TranscriptFilterOptions = ["All speakers"];
         FilteredTranscript = [];
         SpeakerEditors = [];
@@ -151,6 +164,7 @@ public sealed class MainViewModel : ViewModelBase
     public IReadOnlyList<string> SystemAudioOptions { get; }
     public IReadOnlyList<string> QualityOptions { get; }
     public IReadOnlyList<string> RetentionOptions { get; }
+    public IReadOnlyList<string> ThemeOptions { get; }
     public ObservableCollection<string> TranscriptFilterOptions { get; }
 
     public ICommand NavigateCommand { get; }
@@ -355,6 +369,15 @@ public sealed class MainViewModel : ViewModelBase
         }
     }
     public string RetentionOption { get => _retentionOption; set => SetProperty(ref _retentionOption, value); }
+    public string SelectedTheme
+    {
+        get => _selectedTheme;
+        set
+        {
+            if (!SetProperty(ref _selectedTheme, value)) return;
+            ThemeService.Apply(ThemeService.Parse(value));
+        }
+    }
     public bool StartOnLogin { get => _startOnLogin; set => SetProperty(ref _startOnLogin, value); }
     public string SettingsSyncDescription => SyncPaused ? "Meetings stay on this device until you turn sync back on." : "Cloud sync will run in the background when Firebase is connected.";
     public string HotkeyStatus => _hotkey.IsRegistered ? "Registered · Ctrl + Shift + R" : "Unavailable · another app may own this shortcut";
@@ -796,7 +819,12 @@ public sealed class MainViewModel : ViewModelBase
 
     private async Task SaveSettingsAsync()
     {
-        await Task.Delay(140);
+        _savedPreferences.Theme = SelectedTheme;
+        _savedPreferences.RetentionOption = RetentionOption;
+        _savedPreferences.KeepLocalCopy = KeepLocalCopy;
+        _savedPreferences.SyncPaused = SyncPaused;
+        _savedPreferences.StartOnLogin = StartOnLogin;
+        await _preferences.SaveAsync(_savedPreferences);
         OnPropertyChanged(nameof(HotkeyStatus));
         OnPropertyChanged(nameof(SettingsSyncDescription));
         ToastMessage = "Settings saved · your preferences apply to the next recording";
