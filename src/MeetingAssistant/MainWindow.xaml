@@ -154,6 +154,12 @@
                 <DataTrigger Binding="{Binding HasAvailableUpdate}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
             </Style.Triggers>
         </Style>
+        <Style x:Key="UpdateOverlaySurface" TargetType="Border">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsUpdateSurfaceVisible}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
     <Grid>
@@ -1057,7 +1063,7 @@
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                             <StackPanel>
                                                 <TextBlock Text="UPDATES" Style="{StaticResource SectionLabel}" />
-                                                <TextBlock Text="Check GitHub for the latest Meeting Assistant release." FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                                <TextBlock Text="Updates are downloaded and installed automatically when the app is idle." FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
                                             </StackPanel>
                                             <Border Grid.Column="1" Background="{StaticResource BlueDimBrush}" CornerRadius="11" Padding="8,4" VerticalAlignment="Top">
                                                 <TextBlock Text="{Binding UpdateChannelLabel}" FontSize="9" Foreground="{StaticResource BlueBrush}" />
@@ -1074,7 +1080,6 @@
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
                                                 <Button Style="{StaticResource SecondaryButton}" Command="{Binding CheckForUpdatesCommand}" Content="Check for updates" FontSize="11" />
-                                                <Button Style="{StaticResource UpdateAvailableButton}" Command="{Binding InstallUpdateCommand}" Content="Download and restart" FontSize="11" Margin="8,0,0,0" />
                                             </StackPanel>
                                         </Grid>
                                     </StackPanel>
@@ -1102,6 +1107,58 @@
                     <TextBlock Text="{Binding ToastMessage}" FontSize="11" Foreground="{StaticResource MintBrush}" TextWrapping="Wrap" />
                 </Border>
             </Grid>
+
+            <Border x:Name="UpdateOverlay" Grid.ColumnSpan="2" Panel.ZIndex="50" Style="{StaticResource UpdateOverlaySurface}" Background="#D90B0F17" IsHitTestVisible="True">
+                <Border Width="500" MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Border}}" Margin="24" Padding="30" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Background="{StaticResource CardBrush}" BorderBrush="{StaticResource HeroRingBrush}" BorderThickness="1" CornerRadius="20">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <Border Width="48" Height="48" CornerRadius="16" Background="{StaticResource MintDimBrush}">
+                                <TextBlock Text="↻" FontSize="27" Foreground="{StaticResource MintBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <StackPanel Grid.Column="1" Margin="15,1,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="AUTOMATIC UPDATE" Style="{StaticResource SectionLabel}" Foreground="{StaticResource MintBrush}" />
+                                <TextBlock Text="{Binding UpdateVersionDescription}" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Text="Updating Meeting Assistant" FontSize="27" FontWeight="SemiBold" Margin="0,26,0,0" />
+                        <TextBlock Text="A new version is being installed automatically. You can keep watching here while we finish." FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" LineHeight="19" Margin="0,7,0,0" />
+
+                        <Border Background="{StaticResource HeroEndBrush}" BorderBrush="{StaticResource HeroRingBrush}" BorderThickness="1" CornerRadius="13" Padding="16" Margin="0,24,0,0">
+                            <StackPanel>
+                                <Grid>
+                                    <TextBlock Text="{Binding UpdateStageLabel}" FontSize="12" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding UpdateProgressPercentLabel}" HorizontalAlignment="Right" FontSize="12" Foreground="{StaticResource MintBrush}" FontWeight="SemiBold" />
+                                </Grid>
+                                <ProgressBar Value="{Binding UpdateProgressPercent}" IsIndeterminate="{Binding IsUpdateProgressIndeterminate}" Maximum="100" Height="10" Margin="0,13,0,9" />
+                                <TextBlock Text="{Binding UpdateProgressDetail}" FontSize="10" Foreground="{StaticResource MutedBrush}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Grid Margin="0,24,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                                <Border Width="27" Height="27" CornerRadius="14" Background="{StaticResource MintBrush}"><TextBlock Text="1" Foreground="{StaticResource BrandInkBrush}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                <TextBlock Text="Download" FontSize="10" Foreground="{StaticResource MintBrush}" HorizontalAlignment="Center" Margin="0,7,0,0" />
+                            </StackPanel>
+                            <Rectangle Grid.Column="1" Width="32" Height="1" Fill="{StaticResource LineBrush}" VerticalAlignment="Center" Margin="6,0" />
+                            <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                                <Border Width="27" Height="27" CornerRadius="14" Background="{StaticResource BlueDimBrush}" BorderBrush="{StaticResource BlueBrush}" BorderThickness="1"><TextBlock Text="2" Foreground="{StaticResource BlueBrush}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                <TextBlock Text="Install" FontSize="10" Foreground="{StaticResource BlueBrush}" HorizontalAlignment="Center" Margin="0,7,0,0" />
+                            </StackPanel>
+                            <Rectangle Grid.Column="3" Width="32" Height="1" Fill="{StaticResource LineBrush}" VerticalAlignment="Center" Margin="6,0" />
+                            <StackPanel Grid.Column="4" HorizontalAlignment="Center">
+                                <Border Width="27" Height="27" CornerRadius="14" Background="{StaticResource BlueDimBrush}" BorderBrush="{StaticResource BlueBrush}" BorderThickness="1"><TextBlock Text="3" Foreground="{StaticResource BlueBrush}" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                                <TextBlock Text="Restart" FontSize="10" Foreground="{StaticResource BlueBrush}" HorizontalAlignment="Center" Margin="0,7,0,0" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Text="No action needed. Meeting Assistant will reopen when the update is complete." FontSize="10" Foreground="{StaticResource SubtleBrush}" TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,25,0,0" />
+                    </StackPanel>
+                </Border>
+            </Border>
         </Grid>
     </Grid>
 </Window>

@@ -221,6 +221,19 @@ public sealed record AppUpdateInfo(
     string AssetName,
     DateTimeOffset? PublishedAt);
 
+public enum UpdateProgressStage
+{
+    Downloading,
+    Installing,
+    Restarting
+}
+
+public sealed record UpdateDownloadProgress(
+    UpdateProgressStage Stage,
+    int Percent,
+    long BytesDownloaded,
+    long? TotalBytes);
+
 public sealed record UpdateCheckResult(UpdateCheckStatus Status, string Message, AppUpdateInfo? Update = null);
 
 public sealed record UpdateDownloadResult(bool Success, string Message, string? InstallerPath = null);
@@ -230,13 +243,48 @@ public interface IUpdateChannelService : IDisposable
     SemanticVersion CurrentVersion { get; }
     UpdateChannelConfiguration Configuration { get; }
     Task<UpdateCheckResult> CheckAsync(CancellationToken cancellationToken = default);
-    Task<UpdateDownloadResult> DownloadAsync(AppUpdateInfo update, CancellationToken cancellationToken = default);
-    Task<UpdateDownloadResult> DownloadAndLaunchAsync(AppUpdateInfo update, CancellationToken cancellationToken = default);
+    Task<UpdateDownloadResult> DownloadAsync(
+        AppUpdateInfo update,
+        CancellationToken cancellationToken = default,
+        IProgress<UpdateDownloadProgress>? progress = null);
+    Task<UpdateDownloadResult> DownloadAndLaunchAsync(
+        AppUpdateInfo update,
+        CancellationToken cancellationToken = default,
+        IProgress<UpdateDownloadProgress>? progress = null);
+}
+
+public interface IUpdateInstallerLauncher
+{
+    void Launch(string installerPath, IReadOnlyList<string> arguments);
+}
+
+public sealed class WindowsUpdateInstallerLauncher : IUpdateInstallerLauncher
+{
+    public void Launch(string installerPath, IReadOnlyList<string> arguments)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = installerPath,
+            UseShellExecute = true
+        };
+        foreach (var argument in arguments)
+            startInfo.ArgumentList.Add(argument);
+        Process.Start(startInfo);
+    }
 }
 
 public sealed class UpdateChannelService : IUpdateChannelService
 {
     private const long MaximumDownloadBytes = 256L * 1024 * 1024;
+    private static readonly string[] SilentInstallerArguments =
+    [
+        "/VERYSILENT",
+        "/SUPPRESSMSGBOXES",
+        "/NORESTART",
+        "/SP-",
+        "/CLOSEAPPLICATIONS",
+        "/RESTARTAPPLICATIONS"
+    ];
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true
@@ -246,13 +294,15 @@ public sealed class UpdateChannelService : IUpdateChannelService
     private readonly bool _ownsHttpClient;
     private readonly TimeSpan _checkTimeout;
     private readonly TimeSpan _downloadTimeout;
+    private readonly IUpdateInstallerLauncher _installerLauncher;
 
     public UpdateChannelService(
         UpdateChannelConfiguration configuration,
         HttpClient? httpClient = null,
         SemanticVersion? currentVersion = null,
         TimeSpan? checkTimeout = null,
-        TimeSpan? downloadTimeout = null)
+        TimeSpan? downloadTimeout = null,
+        IUpdateInstallerLauncher? installerLauncher = null)
     {
         Configuration = configuration;
         CurrentVersion = currentVersion ?? SemanticVersion.FromAssemblyVersion(typeof(UpdateChannelService).Assembly.GetName().Version);
@@ -260,6 +310,7 @@ public sealed class UpdateChannelService : IUpdateChannelService
         _ownsHttpClient = httpClient is null;
         _checkTimeout = checkTimeout ?? TimeSpan.FromSeconds(8);
         _downloadTimeout = downloadTimeout ?? TimeSpan.FromMinutes(15);
+        _installerLauncher = installerLauncher ?? new WindowsUpdateInstallerLauncher();
         if (_checkTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(checkTimeout));
         if (_downloadTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(downloadTimeout));
 
@@ -339,23 +390,22 @@ public sealed class UpdateChannelService : IUpdateChannelService
         }
     }
 
-    public async Task<UpdateDownloadResult> DownloadAndLaunchAsync(AppUpdateInfo update, CancellationToken cancellationToken = default)
+    public async Task<UpdateDownloadResult> DownloadAndLaunchAsync(
+        AppUpdateInfo update,
+        CancellationToken cancellationToken = default,
+        IProgress<UpdateDownloadProgress>? progress = null)
     {
-        var download = await DownloadAsync(update, cancellationToken);
+        var download = await DownloadAsync(update, cancellationToken, progress);
         if (!download.Success || string.IsNullOrWhiteSpace(download.InstallerPath))
             return download;
 
         try
         {
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = download.InstallerPath,
-                UseShellExecute = true
-            };
-            startInfo.ArgumentList.Add("/CLOSEAPPLICATIONS");
-            startInfo.ArgumentList.Add("/RESTARTAPPLICATIONS");
-            Process.Start(startInfo);
-            return new(true, "Update downloaded. Restarting Meeting Assistant.", download.InstallerPath);
+            var installerLength = new FileInfo(download.InstallerPath).Length;
+            progress?.Report(new(UpdateProgressStage.Installing, 100, installerLength, installerLength));
+            _installerLauncher.Launch(download.InstallerPath, SilentInstallerArguments);
+            progress?.Report(new(UpdateProgressStage.Restarting, 100, installerLength, installerLength));
+            return new(true, "Update is installing automatically. Restarting Meeting Assistant.", download.InstallerPath);
         }
         catch (InvalidOperationException)
         {
@@ -372,7 +422,10 @@ public sealed class UpdateChannelService : IUpdateChannelService
         if (_ownsHttpClient) _httpClient.Dispose();
     }
 
-    public async Task<UpdateDownloadResult> DownloadAsync(AppUpdateInfo update, CancellationToken cancellationToken = default)
+    public async Task<UpdateDownloadResult> DownloadAsync(
+        AppUpdateInfo update,
+        CancellationToken cancellationToken = default,
+        IProgress<UpdateDownloadProgress>? progress = null)
     {
         if (!Configuration.IsConfigured
             || !string.Equals(update.AssetName, Configuration.AssetName, StringComparison.OrdinalIgnoreCase)
@@ -397,9 +450,27 @@ public sealed class UpdateChannelService : IUpdateChannelService
             if (response.Content.Headers.ContentLength > MaximumDownloadBytes)
                 return new(false, "The update package is larger than the safe download limit.");
 
+            var totalBytes = response.Content.Headers.ContentLength;
+            progress?.Report(new(UpdateProgressStage.Downloading, 0, 0, totalBytes));
             await using (var output = new FileStream(temporaryPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
             {
-                await response.Content.CopyToAsync(output, timeout.Token);
+                await using var input = await response.Content.ReadAsStreamAsync(timeout.Token);
+                var buffer = new byte[81920];
+                long bytesDownloaded = 0;
+                int bytesRead;
+                while ((bytesRead = await input.ReadAsync(buffer.AsMemory(), timeout.Token)) > 0)
+                {
+                    await output.WriteAsync(buffer.AsMemory(0, bytesRead), timeout.Token);
+                    bytesDownloaded += bytesRead;
+                    if (bytesDownloaded > MaximumDownloadBytes)
+                        return new(false, "The update package is larger than the safe download limit.");
+
+                    var percent = totalBytes is > 0
+                        ? (int)Math.Clamp(bytesDownloaded * 100L / totalBytes.Value, 0, 100)
+                        : 0;
+                    progress?.Report(new(UpdateProgressStage.Downloading, percent, bytesDownloaded, totalBytes));
+                }
+
                 await output.FlushAsync(timeout.Token);
             }
 

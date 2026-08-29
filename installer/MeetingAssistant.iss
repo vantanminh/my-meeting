@@ -38,4 +38,5 @@ Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+; Always relaunch after the package is applied, including /VERYSILENT update runs.
+Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait skipifdoesntexist

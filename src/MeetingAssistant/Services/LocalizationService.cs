@@ -269,7 +269,24 @@ public static class LocalizationService
             ["Could not install the update. Try again later."] = "Kh\u00f4ng th\u1ec3 c\u00e0i b\u1ea3n c\u1eadp nh\u1eadt. H\u00e3y th\u1eed l\u1ea1i sau.",
             ["No public release has been published yet."] = "Ch\u01b0a c\u00f3 b\u1ea3n ph\u00e1t h\u00e0nh c\u00f4ng khai.",
             ["GitHub update checks are rate limited. Try again later."] = "GitHub \u0111ang gi\u1edbi h\u1ea1n s\u1ed1 l\u1ea7n ki\u1ec3m tra. H\u00e3y th\u1eed l\u1ea1i sau.",
-            ["Could not reach GitHub. Check the network and try again."] = "Kh\u00f4ng th\u1ec3 k\u1ebft n\u1ed1i GitHub. H\u00e3y ki\u1ec3m tra m\u1ea1ng v\u00e0 th\u1eed l\u1ea1i."
+            ["Could not reach GitHub. Check the network and try again."] = "Kh\u00f4ng th\u1ec3 k\u1ebft n\u1ed1i GitHub. H\u00e3y ki\u1ec3m tra m\u1ea1ng v\u00e0 th\u1eed l\u1ea1i.",
+            ["Updates are downloaded and installed automatically when the app is idle."] = "B\u1ea3n c\u1eadp nh\u1eadt s\u1ebd \u0111\u01b0\u1ee3c t\u1ea3i v\u00e0 c\u00e0i \u0111\u1eb7t t\u1ef1 \u0111\u1ed9ng khi \u1ee9ng d\u1ee5ng r\u1ea3nh.",
+            ["AUTOMATIC UPDATE"] = "C\u1eacP NH\u1eacT T\u1ef0 \u0110\u1ed8NG",
+            ["Downloading update"] = "\u0110ang t\u1ea3i b\u1ea3n c\u1eadp nh\u1eadt",
+            ["Installing update"] = "\u0110ang c\u00e0i b\u1ea3n c\u1eadp nh\u1eadt",
+            ["Updating Meeting Assistant"] = "\u0110ang c\u1eadp nh\u1eadt Meeting Assistant",
+            ["A new version is being installed automatically. You can keep watching here while we finish."] = "Phi\u00ean b\u1ea3n m\u1edbi \u0111ang \u0111\u01b0\u1ee3c c\u00e0i t\u1ef1 \u0111\u1ed9ng. B\u1ea1n c\u00f3 th\u1ec3 theo d\u00f5i ti\u1ebfn tr\u00ecnh t\u1ea1i \u0111\u00e2y.",
+            ["Preparing a secure download..."] = "\u0110ang chu\u1ea9n b\u1ecb t\u1ea3i xu\u1ed1ng an to\u00e0n...",
+            ["Installing update in the background..."] = "\u0110ang c\u00e0i b\u1ea3n c\u1eadp nh\u1eadt trong n\u1ec1n...",
+            ["Restarting Meeting Assistant"] = "\u0110ang kh\u1edfi \u0111\u1ed9ng l\u1ea1i Meeting Assistant",
+            ["Restarting Meeting Assistant automatically..."] = "Meeting Assistant s\u1ebd t\u1ef1 \u0111\u1ed9ng kh\u1edfi \u0111\u1ed9ng l\u1ea1i...",
+            ["Update is installing automatically. Restarting Meeting Assistant."] = "B\u1ea3n c\u1eadp nh\u1eadt \u0111ang \u0111\u01b0\u1ee3c c\u00e0i t\u1ef1 \u0111\u1ed9ng. Meeting Assistant s\u1ebd kh\u1edfi \u0111\u1ed9ng l\u1ea1i.",
+            ["Update installed automatically. Restarting Meeting Assistant."] = "B\u1ea3n c\u1eadp nh\u1eadt \u0111\u00e3 \u0111\u01b0\u1ee3c c\u00e0i t\u1ef1 \u0111\u1ed9ng. Meeting Assistant s\u1ebd kh\u1edfi \u0111\u1ed9ng l\u1ea1i.",
+            ["An update will install automatically when your meeting is finished."] = "B\u1ea3n c\u1eadp nh\u1eadt s\u1ebd c\u00e0i \u0111\u1eb7t khi cu\u1ed9c h\u1ecdp c\u1ee7a b\u1ea1n k\u1ebft th\u00fac.",
+            ["Download"] = "T\u1ea3i xu\u1ed1ng",
+            ["Install"] = "C\u00e0i \u0111\u1eb7t",
+            ["Restart"] = "Kh\u1edfi \u0111\u1ed9ng l\u1ea1i",
+            ["No action needed. Meeting Assistant will reopen when the update is complete."] = "Kh\u00f4ng c\u1ea7n thao t\u00e1c. Meeting Assistant s\u1ebd m\u1edf l\u1ea1i khi c\u1eadp nh\u1eadt xong."
         };
 
     private static readonly List<WeakReference<FrameworkElement>> Roots = [];

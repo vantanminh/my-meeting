@@ -60,8 +60,10 @@ public sealed class MainViewModel : ViewModelBase
     private readonly OpenAiMeetingIntelligenceService _openAiIntelligence;
     private readonly IUpdateChannelService _updates;
     private readonly DispatcherTimer _recordingTimer;
+    private readonly DispatcherTimer _updateCheckTimer;
     private CancellationTokenSource? _processingCancellation;
     private CancellationTokenSource? _updateCheckCancellation;
+    private CancellationTokenSource? _updateCancellation;
     private RecordingData? _lastRecording;
     private AppUpdateInfo? _availableUpdate;
     private WorkspaceView _currentView = WorkspaceView.Auth;
@@ -93,6 +95,10 @@ public sealed class MainViewModel : ViewModelBase
     private string _openAiSummaryModel = OpenAiConfiguration.DefaultSummaryModel;
     private string _openAiConnectionStatus = "Not tested yet";
     private string _updateStatus = "Updates are not configured for this build.";
+    private UpdateProgressStage _updateProgressStage = UpdateProgressStage.Downloading;
+    private int _updateProgressPercent;
+    private long _updateDownloadedBytes;
+    private long? _updateTotalBytes;
     private double _microphoneLevel;
     private double _systemAudioLevel;
     private int _processingPercent;
@@ -115,6 +121,7 @@ public sealed class MainViewModel : ViewModelBase
     private bool _isSavingSettings;
     private bool _isCheckingForUpdates;
     private bool _isInstallingUpdate;
+    private bool _isUpdateSurfaceVisible;
 
     public MainViewModel(AppServices services)
     {
@@ -148,6 +155,8 @@ public sealed class MainViewModel : ViewModelBase
 
         _recordingTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _recordingTimer.Tick += (_, _) => UpdateRecordingClock();
+        _updateCheckTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(6) };
+        _updateCheckTimer.Tick += (_, _) => _ = CheckForUpdatesAsync(silent: true);
         _audio.LevelsChanged += OnAudioLevelsChanged;
         _hotkey.ToggleRecordingRequested += OnGlobalHotkeyRequested;
 
@@ -175,7 +184,7 @@ public sealed class MainViewModel : ViewModelBase
         ForgotPasswordCommand = new AsyncRelayCommand(RequestPasswordResetAsync, () => !IsAuthenticating);
         SignOutCommand = new AsyncRelayCommand(SignOutAsync);
         TestDevicesCommand = new AsyncRelayCommand(TestDevicesAsync, () => !IsTestingDevices);
-        StartRecordingCommand = new AsyncRelayCommand(StartRecordingAsync, () => !IsRecording && !IsProcessing);
+        StartRecordingCommand = new AsyncRelayCommand(StartRecordingAsync, () => !IsRecording && !IsProcessing && !IsInstallingUpdate);
         PauseRecordingCommand = new AsyncRelayCommand(PauseRecordingAsync, () => IsRecording && !IsStopping);
         ResumeRecordingCommand = new AsyncRelayCommand(ResumeRecordingAsync, () => IsRecording && IsPaused && !IsStopping);
         StopRecordingCommand = new AsyncRelayCommand(StopRecordingAsync, () => IsRecording && !IsStopping);
@@ -188,7 +197,7 @@ public sealed class MainViewModel : ViewModelBase
         ClearSearchCommand = new RelayCommand(_ => SearchQuery = string.Empty, _ => HasSearchQuery);
         TestOpenAiCommand = new AsyncRelayCommand(TestOpenAiAsync, () => !IsTestingOpenAi && !IsSavingSettings);
         CheckForUpdatesCommand = new AsyncRelayCommand(CheckForUpdatesAsync, () => !IsCheckingForUpdates && !IsInstallingUpdate);
-        InstallUpdateCommand = new AsyncRelayCommand(InstallUpdateAsync, () => HasAvailableUpdate && !IsCheckingForUpdates && !IsInstallingUpdate);
+        InstallUpdateCommand = new AsyncRelayCommand(InstallUpdateAsync, () => HasAvailableUpdate && CanInstallUpdateNow && !IsCheckingForUpdates && !IsInstallingUpdate);
     }
 
     public ObservableCollection<Meeting> Meetings { get; }
@@ -344,6 +353,7 @@ public sealed class MainViewModel : ViewModelBase
             StopRecordingCommand.RaiseCanExecuteChanged();
             StartRecordingCommand.RaiseCanExecuteChanged();
             OnPropertyChanged(nameof(RecordingIndicatorLabel));
+            RefreshUpdateAvailability();
         }
     }
     public bool IsPaused
@@ -357,7 +367,15 @@ public sealed class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(RecordingIndicatorLabel));
         }
     }
-    public bool IsStopping { get => _isStopping; private set => SetProperty(ref _isStopping, value); }
+    public bool IsStopping
+    {
+        get => _isStopping;
+        private set
+        {
+            if (!SetProperty(ref _isStopping, value)) return;
+            InstallUpdateCommand.RaiseCanExecuteChanged();
+        }
+    }
     public string RecordingStatus { get => LocalizationService.Translate(_recordingStatus); private set => SetProperty(ref _recordingStatus, value); }
     public string ElapsedLabel { get => _elapsedLabel; private set => SetProperty(ref _elapsedLabel, value); }
     public string ActiveSpeaker { get => LocalizationService.Translate(_activeSpeaker); private set => SetProperty(ref _activeSpeaker, value); }
@@ -392,6 +410,7 @@ public sealed class MainViewModel : ViewModelBase
             RetryProcessingCommand.RaiseCanExecuteChanged();
             CancelProcessingCommand.RaiseCanExecuteChanged();
             StartRecordingCommand.RaiseCanExecuteChanged();
+            RefreshUpdateAvailability();
         }
     }
     public bool ProcessingHasError { get => _processingHasError; private set => SetProperty(ref _processingHasError, value); }
@@ -465,6 +484,43 @@ public sealed class MainViewModel : ViewModelBase
     public string UpdateChannelLabel => LocalizationService.Translate(_updates.Configuration.IsConfigured ? "GitHub Releases" : "Not configured");
     public string UpdateStatus { get => LocalizationService.Translate(_updateStatus); private set => SetProperty(ref _updateStatus, value); }
     public bool HasAvailableUpdate => _availableUpdate is not null;
+    public string UpdateVersionLabel => _availableUpdate is null ? string.Empty : $"v{_availableUpdate.Version}";
+    public string UpdateVersionDescription => $"{LocalizationService.Translate("Installing update")} {UpdateVersionLabel}".Trim();
+    public UpdateProgressStage CurrentUpdateStage => _updateProgressStage;
+    public int UpdateProgressPercent => _updateProgressPercent;
+    public bool IsUpdateProgressIndeterminate => _updateTotalBytes is null;
+    public string UpdateProgressPercentLabel => IsUpdateProgressIndeterminate ? "—" : $"{UpdateProgressPercent}%";
+    public string UpdateProgressDetail
+    {
+        get
+        {
+            if (_updateProgressStage == UpdateProgressStage.Downloading)
+            {
+                if (_updateTotalBytes is > 0)
+                    return $"{FormatBytes(_updateDownloadedBytes)} / {FormatBytes(_updateTotalBytes.Value)}";
+                if (_updateDownloadedBytes > 0)
+                    return FormatBytes(_updateDownloadedBytes);
+            }
+
+            return LocalizationService.Translate(_updateProgressStage switch
+            {
+                UpdateProgressStage.Installing => "Installing update in the background...",
+                UpdateProgressStage.Restarting => "Restarting Meeting Assistant automatically...",
+                _ => "Preparing a secure download..."
+            });
+        }
+    }
+    public string UpdateStageLabel => LocalizationService.Translate(_updateProgressStage switch
+    {
+        UpdateProgressStage.Installing => "Installing update",
+        UpdateProgressStage.Restarting => "Restarting Meeting Assistant",
+        _ => "Downloading update"
+    });
+    public bool IsUpdateSurfaceVisible
+    {
+        get => _isUpdateSurfaceVisible;
+        private set => SetProperty(ref _isUpdateSurfaceVisible, value);
+    }
     public bool IsCheckingForUpdates
     {
         get => _isCheckingForUpdates;
@@ -483,6 +539,7 @@ public sealed class MainViewModel : ViewModelBase
             if (!SetProperty(ref _isInstallingUpdate, value)) return;
             CheckForUpdatesCommand.RaiseCanExecuteChanged();
             InstallUpdateCommand.RaiseCanExecuteChanged();
+            StartRecordingCommand.RaiseCanExecuteChanged();
         }
     }
     public bool StartOnLogin { get => _startOnLogin; set => SetProperty(ref _startOnLogin, value); }
@@ -538,6 +595,7 @@ public sealed class MainViewModel : ViewModelBase
         IsAuthenticated = true;
         CurrentView = WorkspaceView.Dashboard;
         await LoadMeetingsAsync();
+        StartUpdateMonitoring();
         _ = CheckForUpdatesAsync(silent: true);
     }
 
@@ -556,7 +614,7 @@ public sealed class MainViewModel : ViewModelBase
             nameof(CurrentMeetingTitle), nameof(ProcessingStage), nameof(ProcessingMessage), nameof(SettingsSyncDescription),
             nameof(HotkeyStatus), nameof(ToastMessage), nameof(LastSyncLabel), nameof(PageTitle), nameof(PageDescription),
             nameof(OpenAiKeyStatus), nameof(OpenAiConnectionStatus), nameof(OpenAiProviderLabel), nameof(UpdateChannelLabel),
-            nameof(UpdateStatus)
+            nameof(UpdateStatus), nameof(UpdateStageLabel), nameof(UpdateProgressDetail), nameof(UpdateVersionDescription)
         })
         {
             OnPropertyChanged(propertyName);
@@ -566,6 +624,7 @@ public sealed class MainViewModel : ViewModelBase
     public void HandleGlobalHotkey()
     {
         if (!IsAuthenticated) return;
+        if (IsInstallingUpdate) return;
         if (IsRecording)
         {
             StopRecordingCommand.Execute(null);
@@ -623,6 +682,7 @@ public sealed class MainViewModel : ViewModelBase
         IsAuthenticated = true;
         CurrentView = WorkspaceView.Dashboard;
         await LoadMeetingsAsync();
+        StartUpdateMonitoring();
         _ = CheckForUpdatesAsync(silent: true);
         ToastMessage = session.IsOffline ? "Offline workspace ready · your meetings are stored locally" : "Workspace ready · your session is secure";
     }
@@ -631,6 +691,8 @@ public sealed class MainViewModel : ViewModelBase
     {
         if (IsRecording) await StopRecordingAsync();
         await _auth.SignOutAsync();
+        _updateCheckTimer.Stop();
+        _updateCheckCancellation?.Cancel();
         CurrentUser = null;
         IsAuthenticated = false;
         CurrentView = WorkspaceView.Auth;
@@ -1056,26 +1118,78 @@ public sealed class MainViewModel : ViewModelBase
         }
     }
 
+    private bool CanInstallUpdateNow => !IsRecording && !IsProcessing && !IsStopping;
+
+    private void StartUpdateMonitoring()
+    {
+        if (_updates.Configuration.IsConfigured && IsAuthenticated)
+            _updateCheckTimer.Start();
+    }
+
+    private void RefreshUpdateAvailability()
+    {
+        InstallUpdateCommand.RaiseCanExecuteChanged();
+        if (!IsAuthenticated || !CanInstallUpdateNow || _availableUpdate is null || IsCheckingForUpdates || IsInstallingUpdate)
+            return;
+
+        _ = InstallUpdateAsync(_availableUpdate);
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes >= 1024 * 1024)
+            return $"{bytes / (1024d * 1024d):0.0} MB";
+        if (bytes >= 1024)
+            return $"{bytes / 1024d:0.0} KB";
+        return $"{bytes:N0} B";
+    }
+
+    private void ApplyUpdateProgress(UpdateDownloadProgress progress)
+    {
+        _updateProgressStage = progress.Stage;
+        _updateProgressPercent = Math.Clamp(progress.Percent, 0, 100);
+        _updateDownloadedBytes = Math.Max(0, progress.BytesDownloaded);
+        _updateTotalBytes = progress.TotalBytes;
+        OnPropertyChanged(nameof(CurrentUpdateStage));
+        OnPropertyChanged(nameof(UpdateProgressPercent));
+        OnPropertyChanged(nameof(IsUpdateProgressIndeterminate));
+        OnPropertyChanged(nameof(UpdateProgressPercentLabel));
+        OnPropertyChanged(nameof(UpdateProgressDetail));
+        OnPropertyChanged(nameof(UpdateStageLabel));
+    }
+
     private Task CheckForUpdatesAsync() => CheckForUpdatesAsync(silent: false);
 
     private async Task CheckForUpdatesAsync(bool silent)
     {
-        if (IsCheckingForUpdates || IsInstallingUpdate) return;
+        if (!IsAuthenticated || IsCheckingForUpdates || IsInstallingUpdate) return;
 
         IsCheckingForUpdates = true;
         if (!silent) UpdateStatus = "Checking for updates...";
         var cancellation = new CancellationTokenSource();
         _updateCheckCancellation = cancellation;
+        AppUpdateInfo? updateToInstall = null;
         try
         {
             var result = await _updates.CheckAsync(cancellation.Token);
             _availableUpdate = result.Update;
             OnPropertyChanged(nameof(HasAvailableUpdate));
-            InstallUpdateCommand.RaiseCanExecuteChanged();
+            OnPropertyChanged(nameof(UpdateVersionLabel));
+            OnPropertyChanged(nameof(UpdateVersionDescription));
             UpdateStatus = result.Status == UpdateCheckStatus.UpdateAvailable && result.Update is not null
                 ? $"{LocalizationService.Translate("Update available")}: v{result.Update.Version}"
                 : result.Message;
-            if (!silent && result.Status == UpdateCheckStatus.UpdateAvailable)
+
+            if (result.Status == UpdateCheckStatus.UpdateAvailable && result.Update is not null)
+            {
+                if (CanInstallUpdateNow)
+                    updateToInstall = result.Update;
+                else
+                    UpdateStatus = "An update will install automatically when your meeting is finished.";
+            }
+
+            InstallUpdateCommand.RaiseCanExecuteChanged();
+            if (!silent && result.Status == UpdateCheckStatus.UpdateAvailable && updateToInstall is null)
                 ToastMessage = result.Message;
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
@@ -1086,6 +1200,8 @@ public sealed class MainViewModel : ViewModelBase
         {
             _availableUpdate = null;
             OnPropertyChanged(nameof(HasAvailableUpdate));
+            OnPropertyChanged(nameof(UpdateVersionLabel));
+            OnPropertyChanged(nameof(UpdateVersionDescription));
             InstallUpdateCommand.RaiseCanExecuteChanged();
             UpdateStatus = "Could not check for updates. Check your network and try again.";
         }
@@ -1096,43 +1212,83 @@ public sealed class MainViewModel : ViewModelBase
             cancellation.Dispose();
             IsCheckingForUpdates = false;
         }
+
+        if (updateToInstall is not null)
+            await InstallUpdateAsync(updateToInstall);
     }
 
-    private async Task InstallUpdateAsync()
+    private Task InstallUpdateAsync() => InstallUpdateAsync(_availableUpdate);
+
+    private async Task InstallUpdateAsync(AppUpdateInfo? update)
     {
-        if (_availableUpdate is null) return;
+        if (update is null || !CanInstallUpdateNow || IsCheckingForUpdates || IsInstallingUpdate)
+            return;
 
         IsInstallingUpdate = true;
+        IsUpdateSurfaceVisible = true;
+        _updateProgressStage = UpdateProgressStage.Downloading;
+        _updateProgressPercent = 0;
+        _updateDownloadedBytes = 0;
+        _updateTotalBytes = null;
+        OnPropertyChanged(nameof(CurrentUpdateStage));
+        OnPropertyChanged(nameof(UpdateProgressPercent));
+        OnPropertyChanged(nameof(IsUpdateProgressIndeterminate));
+        OnPropertyChanged(nameof(UpdateProgressPercentLabel));
+        OnPropertyChanged(nameof(UpdateProgressDetail));
+        OnPropertyChanged(nameof(UpdateStageLabel));
         UpdateStatus = "Downloading update...";
+
+        var cancellation = new CancellationTokenSource();
+        _updateCancellation = cancellation;
+        var shutdownRequested = false;
         try
         {
-            var result = await _updates.DownloadAndLaunchAsync(_availableUpdate);
+            var progress = new Progress<UpdateDownloadProgress>(ApplyUpdateProgress);
+            var result = await _updates.DownloadAndLaunchAsync(update, cancellation.Token, progress);
             UpdateStatus = result.Message;
             if (result.Success)
             {
-                ToastMessage = "Update downloaded. Meeting Assistant will restart.";
+                shutdownRequested = true;
+                ToastMessage = "Update is installing automatically. Restarting Meeting Assistant.";
                 System.Windows.Application.Current?.Shutdown();
             }
+            else
+            {
+                IsUpdateSurfaceVisible = false;
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            IsUpdateSurfaceVisible = false;
         }
         catch (Exception)
         {
             UpdateStatus = "Could not install the update. Try again later.";
+            IsUpdateSurfaceVisible = false;
         }
         finally
         {
+            if (ReferenceEquals(_updateCancellation, cancellation))
+                _updateCancellation = null;
+            cancellation.Dispose();
             IsInstallingUpdate = false;
+            if (!shutdownRequested)
+                IsUpdateSurfaceVisible = false;
         }
     }
 
     public void Dispose()
     {
         _recordingTimer.Stop();
+        _updateCheckTimer.Stop();
         _audio.LevelsChanged -= OnAudioLevelsChanged;
         _hotkey.ToggleRecordingRequested -= OnGlobalHotkeyRequested;
         _processingCancellation?.Cancel();
         _processingCancellation?.Dispose();
         _updateCheckCancellation?.Cancel();
         _updateCheckCancellation?.Dispose();
+        _updateCancellation?.Cancel();
+        _updateCancellation?.Dispose();
         LocalizationService.LanguageChanged -= OnLanguageChanged;
     }
 }

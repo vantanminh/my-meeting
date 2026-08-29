@@ -165,21 +165,57 @@ try
             "{\"enabled\":true,\"owner\":\"test-owner\",\"repository\":\"test-repo\",\"assetName\":\"MeetingAssistant-Setup.exe\"}");
 
         using var updateHttpClient = new HttpClient(new FakeGitHubUpdateHandler());
+        var installerLauncher = new CapturingUpdateInstallerLauncher();
         using var updateService = new UpdateChannelService(
             new UpdateChannelConfiguration(updateTestDirectory),
             httpClient: updateHttpClient,
             currentVersion: new SemanticVersion(1, 0, 0),
-            checkTimeout: TimeSpan.FromMilliseconds(250));
+            checkTimeout: TimeSpan.FromMilliseconds(250),
+            installerLauncher: installerLauncher);
         var updateCheck = await updateService.CheckAsync();
         if (updateCheck.Status != UpdateCheckStatus.UpdateAvailable || updateCheck.Update?.Version.ToString() != "1.0.1")
             failures.Add($"update service should detect a newer GitHub release asset (status: {updateCheck.Status}, message: {updateCheck.Message})");
 
         if (updateCheck.Update is not null)
         {
-            var download = await updateService.DownloadAsync(updateCheck.Update);
+            var updateProgressValues = new List<UpdateDownloadProgress>();
+            var download = await updateService.DownloadAsync(
+                updateCheck.Update,
+                progress: new Progress<UpdateDownloadProgress>(progress => updateProgressValues.Add(progress)));
             downloadedUpdatePath = download.InstallerPath;
             if (!download.Success || string.IsNullOrWhiteSpace(download.InstallerPath) || !File.Exists(download.InstallerPath))
                 failures.Add("update service should download the configured installer asset");
+            if (updateProgressValues.Count < 2
+                || updateProgressValues[0].Stage != UpdateProgressStage.Downloading
+                || updateProgressValues[^1].Stage != UpdateProgressStage.Downloading
+                || updateProgressValues[^1].Percent != 100
+                || updateProgressValues[^1].BytesDownloaded <= 0
+                || updateProgressValues[^1].TotalBytes != updateProgressValues[^1].BytesDownloaded)
+                failures.Add("update service should report byte-level download progress through completion");
+
+            var launchProgressValues = new List<UpdateDownloadProgress>();
+            var launch = await updateService.DownloadAndLaunchAsync(
+                updateCheck.Update,
+                progress: new Progress<UpdateDownloadProgress>(progress => launchProgressValues.Add(progress)));
+            downloadedUpdatePath = launch.InstallerPath;
+            if (!launch.Success)
+                failures.Add("update service should launch the downloaded installer");
+
+            var expectedInstallerArguments = new[]
+            {
+                "/VERYSILENT",
+                "/SUPPRESSMSGBOXES",
+                "/NORESTART",
+                "/SP-",
+                "/CLOSEAPPLICATIONS",
+                "/RESTARTAPPLICATIONS"
+            };
+            if (!installerLauncher.Arguments.SequenceEqual(expectedInstallerArguments))
+                failures.Add("update installer should run silently, suppress prompts, close the app, and restart it");
+            if (launchProgressValues.Count == 0
+                || launchProgressValues[^1].Stage != UpdateProgressStage.Restarting
+                || !launchProgressValues.Any(progress => progress.Stage == UpdateProgressStage.Installing))
+                failures.Add("update service should report installing and restarting stages");
         }
 
         using var hangingUpdateHttpClient = new HttpClient(new HangingGitHubUpdateHandler());
@@ -335,6 +371,17 @@ sealed class HangingGitHubUpdateHandler : HttpMessageHandler
     {
         await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
         return new HttpResponseMessage(HttpStatusCode.OK);
+    }
+}
+
+sealed class CapturingUpdateInstallerLauncher : IUpdateInstallerLauncher
+{
+    public List<string> Arguments { get; } = [];
+
+    public void Launch(string installerPath, IReadOnlyList<string> arguments)
+    {
+        Arguments.Clear();
+        Arguments.AddRange(arguments);
     }
 }
 

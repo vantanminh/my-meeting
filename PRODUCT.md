@@ -152,6 +152,7 @@ Entry & Authentication
 
 - Manage speaker profiles: rename, merge, or remove speaker voice profiles; apply known profiles to new meetings.  
 - Update device settings and hotkeys.  
+- Application updates: check for new releases in the background, show a clear in-app download/install/restart progress state, and apply the update automatically while the workspace is idle without an installer wizard.
 - Handle errors: missing permissions, device conflicts, API failures, network disconnects during Firebase sync.  
 
 ***

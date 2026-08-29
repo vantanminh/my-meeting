@@ -98,7 +98,7 @@ The generated installer is `dist\MeetingAssistant-Setup.exe`. Do not put an Open
 
 ## GitHub update channel and CI/CD release
 
-The app can check a public GitHub repository for its latest non-prerelease release from Settings. When a newer release contains `MeetingAssistant-Setup.exe`, the app downloads it to the user's temporary folder, starts the installer, and restarts Meeting Assistant. Network checks are bounded by a short timeout so an unavailable GitHub does not block the UI.
+The app checks a public GitHub repository for its latest non-prerelease release when a workspace opens and periodically in the background. When a newer release contains `MeetingAssistant-Setup.exe`, the app waits until it is idle, downloads the package with byte-level progress, and shows a dedicated in-app update surface for downloading, installing, and restarting. The installer runs silently and relaunches Meeting Assistant automatically, so the user never has to step through an installer wizard. Network checks are bounded by a short timeout so an unavailable GitHub does not block the UI.
 
 The workflow at `.github/workflows/release.yml` runs on every push to `main` or `master` (and can be started manually). It finds the highest existing `vMAJOR.MINOR.PATCH` tag, increments the patch number, embeds that version into the executable and installer, builds the self-contained `.exe`, and publishes a GitHub Release with the installer asset. Version numbers are therefore advanced by release tags and do not require a source-code version commit or a CI loop.
 
