@@ -46,6 +46,55 @@ try
     var syncResult = await services.CloudSyncService.SyncAsync(processed.Meeting);
     if (!syncResult.Success) failures.Add("local/cloud sync should preserve a meeting when Firebase is not configured");
 
+    var firebaseTestDirectory = Path.Combine(Path.GetTempPath(), $"meeting-assistant-firebase-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(firebaseTestDirectory);
+    try
+    {
+        await File.WriteAllTextAsync(
+            Path.Combine(firebaseTestDirectory, FirebaseConfiguration.ConfigFileName),
+            "{\"apiKey\":\"test-firebase-key\",\"projectId\":\"test-project\"}");
+        var remoteMeeting = new Meeting
+        {
+            Id = "cloud-meeting",
+            Title = "Remote Firebase meeting",
+            StartedAt = DateTimeOffset.Now.AddHours(-1),
+            UpdatedAt = DateTimeOffset.Now,
+            Duration = TimeSpan.FromMinutes(18),
+            ParticipantCount = 2,
+            AudioSources = "Test microphone + test system audio",
+            Speakers = [new SpeakerProfile { Id = "cloud-speaker", Name = "Cloud speaker", Meetings = 1 }],
+            Transcript = [new TranscriptSegment { SpeakerId = "cloud-speaker", SpeakerName = "Cloud speaker", Start = TimeSpan.FromSeconds(1), End = TimeSpan.FromSeconds(4), Text = "Loaded from Firestore." }],
+            Summary = new MeetingSummary { Overview = "Remote summary", KeyPoints = ["Cloud data is readable"] }
+        };
+        var firebaseHandler = new FakeFirebaseHandler("test-project", "firebase-user", remoteMeeting);
+        using var firebaseHttpClient = new HttpClient(firebaseHandler);
+        var firebaseAuth = new FakeAuthService(new UserSession
+        {
+            UserId = "firebase-user",
+            Email = "test@example.com",
+            DisplayName = "Test User",
+            AccessToken = "test-access-token"
+        });
+        var firebaseCloud = new FirebaseCloudSyncService(
+            new FirebaseConfiguration(firebaseTestDirectory),
+            firebaseAuth,
+            firebaseHttpClient);
+
+        var cloudMeetings = await firebaseCloud.LoadAsync();
+        if (cloudMeetings.Count != 1 || cloudMeetings[0].Title != remoteMeeting.Title)
+            failures.Add("Firebase adapter should load and parse Firestore meetings");
+        if (cloudMeetings.Count == 1 && cloudMeetings[0].Transcript.Count != 1)
+            failures.Add("Firebase adapter should restore transcript JSON");
+
+        var firebaseSyncResult = await firebaseCloud.SyncAsync(remoteMeeting);
+        if (!firebaseSyncResult.Success || !firebaseHandler.SawPatch)
+            failures.Add("Firebase adapter should PATCH meetings to Firestore");
+    }
+    finally
+    {
+        if (Directory.Exists(firebaseTestDirectory)) Directory.Delete(firebaseTestDirectory, recursive: true);
+    }
+
     var fakeAudioDirectory = Path.Combine(Path.GetTempPath(), $"meeting-assistant-openai-{Guid.NewGuid():N}");
     Directory.CreateDirectory(fakeAudioDirectory);
     var fakeMicrophonePath = Path.Combine(fakeAudioDirectory, "microphone.wav");
@@ -138,4 +187,85 @@ sealed class FakeOpenAiHandler : HttpMessageHandler
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
+}
+
+sealed class FakeFirebaseHandler : HttpMessageHandler
+{
+    private readonly string _projectId;
+    private readonly string _userId;
+    private readonly string _payload;
+
+    public FakeFirebaseHandler(string projectId, string userId, Meeting meeting)
+    {
+        _projectId = projectId;
+        _userId = userId;
+        var fields = new Dictionary<string, object>
+        {
+            ["title"] = StringValue(meeting.Title),
+            ["startedAt"] = TimestampValue(meeting.StartedAt),
+            ["updatedAt"] = TimestampValue(meeting.UpdatedAt),
+            ["durationSeconds"] = DoubleValue(meeting.Duration.TotalSeconds),
+            ["participantCount"] = new Dictionary<string, object> { ["integerValue"] = meeting.ParticipantCount.ToString() },
+            ["audioSources"] = StringValue(meeting.AudioSources),
+            ["transcriptJson"] = StringValue(JsonSerializer.Serialize(meeting.Transcript)),
+            ["summaryJson"] = StringValue(JsonSerializer.Serialize(meeting.Summary)),
+            ["speakerJson"] = StringValue(JsonSerializer.Serialize(meeting.Speakers))
+        };
+        _payload = JsonSerializer.Serialize(new
+        {
+            documents = new[]
+            {
+                new
+                {
+                    name = $"projects/{projectId}/databases/(default)/documents/users/{userId}/meetings/{meeting.Id}",
+                    fields
+                }
+            }
+        });
+    }
+
+    public bool SawPatch { get; private set; }
+
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var expectedPath = $"/v1/projects/{_projectId}/databases/(default)/documents/users/{_userId}/meetings";
+        if (request.Method == HttpMethod.Get && request.RequestUri?.AbsolutePath == expectedPath)
+            return JsonResponse(_payload);
+
+        if (request.Method == HttpMethod.Patch && request.RequestUri?.AbsolutePath.StartsWith(expectedPath + "/", StringComparison.Ordinal) == true)
+        {
+            SawPatch = (await request.Content!.ReadAsStringAsync(cancellationToken)).Contains("updatedAt", StringComparison.Ordinal);
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        }
+
+        return new HttpResponseMessage(HttpStatusCode.NotFound);
+    }
+
+    private static HttpResponseMessage JsonResponse(string json)
+        => new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
+
+    private static Dictionary<string, object> StringValue(string value)
+        => new() { ["stringValue"] = value };
+
+    private static Dictionary<string, object> DoubleValue(double value)
+        => new() { ["doubleValue"] = value };
+
+    private static Dictionary<string, object> TimestampValue(DateTimeOffset value)
+        => new() { ["timestampValue"] = value.ToUniversalTime().ToString("O") };
+}
+
+sealed class FakeAuthService : IAuthService
+{
+    public FakeAuthService(UserSession session) => CurrentSession = session;
+
+    public UserSession? CurrentSession { get; }
+    public Task<UserSession?> RestoreAsync() => Task.FromResult(CurrentSession);
+    public Task<AuthResult> SignInAsync(string email, string password) => throw new NotSupportedException();
+    public Task<AuthResult> SignUpAsync(string displayName, string email, string password) => throw new NotSupportedException();
+    public Task<AuthResult> RequestPasswordResetAsync(string email) => throw new NotSupportedException();
+    public Task<AuthResult> SignInOfflineAsync() => throw new NotSupportedException();
+    public Task SignOutAsync() => Task.CompletedTask;
 }

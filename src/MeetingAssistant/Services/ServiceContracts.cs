@@ -68,6 +68,7 @@ public interface ICloudSyncService
 {
     bool IsPaused { get; set; }
     string StatusLabel { get; }
+    Task<IReadOnlyList<Meeting>> LoadAsync(CancellationToken cancellationToken = default);
     Task<SyncResult> SyncAsync(Meeting meeting, CancellationToken cancellationToken = default);
 }
 

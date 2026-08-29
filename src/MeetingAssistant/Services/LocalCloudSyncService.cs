@@ -11,6 +11,12 @@ public sealed class LocalCloudSyncService : ICloudSyncService
     public bool IsPaused { get; set; }
     public string StatusLabel => IsPaused ? "Sync paused" : "Local workspace";
 
+    public Task<IReadOnlyList<Meeting>> LoadAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult<IReadOnlyList<Meeting>>([]);
+    }
+
     public async Task<SyncResult> SyncAsync(Meeting meeting, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

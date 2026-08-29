@@ -608,7 +608,15 @@ public sealed class MainViewModel : ViewModelBase
     private async Task LoadMeetingsAsync()
     {
         IsLoadingMeetings = true;
-        var meetings = await _repository.LoadAsync();
+        var localMeetings = await _repository.LoadAsync();
+        var meetings = localMeetings.ToList();
+        var cloudMeetings = await _cloud.LoadAsync();
+        if (cloudMeetings.Count > 0)
+        {
+            meetings = MergeMeetings(localMeetings, cloudMeetings);
+            await _repository.SaveAsync(meetings);
+        }
+
         Meetings.Clear();
         foreach (var meeting in meetings.OrderByDescending(m => m.StartedAt))
         {
@@ -620,6 +628,21 @@ public sealed class MainViewModel : ViewModelBase
         }
         RefreshVisibleMeetings();
         IsLoadingMeetings = false;
+    }
+
+    private static List<Meeting> MergeMeetings(IEnumerable<Meeting> localMeetings, IEnumerable<Meeting> cloudMeetings)
+    {
+        var merged = localMeetings.ToDictionary(meeting => meeting.Id, StringComparer.OrdinalIgnoreCase);
+        foreach (var cloudMeeting in cloudMeetings)
+        {
+            if (!merged.TryGetValue(cloudMeeting.Id, out var localMeeting)
+                || cloudMeeting.UpdatedAt >= localMeeting.UpdatedAt)
+            {
+                merged[cloudMeeting.Id] = cloudMeeting;
+            }
+        }
+
+        return merged.Values.ToList();
     }
 
     private void RefreshVisibleMeetings()
@@ -872,9 +895,12 @@ public sealed class MainViewModel : ViewModelBase
     private async Task SaveMeetingAsync()
     {
         if (CurrentMeeting is null) return;
+        CurrentMeeting.UpdatedAt = DateTimeOffset.Now;
+        var sync = await _cloud.SyncAsync(CurrentMeeting);
+        CurrentMeeting.SyncStatus = sync.Label;
         await _repository.SaveAsync(Meetings);
         RefreshVisibleMeetings();
-        ToastMessage = "Meeting changes saved to your local workspace";
+        ToastMessage = sync.Success ? "Meeting changes saved to your local workspace" : "Meeting changes saved locally; cloud sync will retry";
     }
 
     private async Task SaveSpeakerAsync()
@@ -892,6 +918,12 @@ public sealed class MainViewModel : ViewModelBase
         }
 
         if (CurrentMeeting is not null) BuildDetailState(CurrentMeeting);
+        foreach (var meeting in Meetings)
+        {
+            meeting.UpdatedAt = DateTimeOffset.Now;
+            var sync = await _cloud.SyncAsync(meeting);
+            meeting.SyncStatus = sync.Label;
+        }
         await _repository.SaveAsync(Meetings);
         ToastMessage = "Speaker names updated across your meetings";
     }

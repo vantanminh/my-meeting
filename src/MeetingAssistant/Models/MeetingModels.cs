@@ -44,6 +44,7 @@ public sealed class Meeting
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Title { get; set; } = "Untitled meeting";
     public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.Now;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.Now;
     public TimeSpan Duration { get; set; }
     public int ParticipantCount { get; set; }
     public MeetingStatus Status { get; set; } = MeetingStatus.Ready;
