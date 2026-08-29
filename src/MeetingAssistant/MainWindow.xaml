@@ -1131,7 +1131,7 @@
                                     <TextBlock Text="{Binding UpdateStageLabel}" FontSize="12" FontWeight="SemiBold" />
                                     <TextBlock Text="{Binding UpdateProgressPercentLabel}" HorizontalAlignment="Right" FontSize="12" Foreground="{StaticResource MintBrush}" FontWeight="SemiBold" />
                                 </Grid>
-                                <ProgressBar Value="{Binding UpdateProgressPercent}" IsIndeterminate="{Binding IsUpdateProgressIndeterminate}" Maximum="100" Height="10" Margin="0,13,0,9" />
+                                <ProgressBar Value="{Binding UpdateProgressPercent, Mode=OneWay}" IsIndeterminate="{Binding IsUpdateProgressIndeterminate, Mode=OneWay}" Maximum="100" Height="10" Margin="0,13,0,9" />
                                 <TextBlock Text="{Binding UpdateProgressDetail}" FontSize="10" Foreground="{StaticResource MutedBrush}" />
                             </StackPanel>
                         </Border>
