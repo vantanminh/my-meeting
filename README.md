@@ -44,6 +44,30 @@ dotnet run --project src/MeetingAssistant/MeetingAssistant.csproj
 
 Without both values, the app intentionally stays in local mode and offers the offline workspace.
 
+## OpenAI transcription and summaries
+
+The Settings page can save the OpenAI key to the current Windows user's environment and choose the models used for transcription and summaries. The app reads these variables (the scoped key takes precedence):
+
+```text
+OPENAI_API_KEY
+MEETING_ASSISTANT_OPENAI_API_KEY
+MEETING_ASSISTANT_OPENAI_TRANSCRIPTION_MODEL
+MEETING_ASSISTANT_OPENAI_SUMMARY_MODEL
+```
+
+The default transcription model is `gpt-4o-transcribe`. The default summary model is `gpt-4.1-mini`; both are editable in Settings. If no OpenAI key is configured, recordings use the deterministic local demo processor. A real WASAPI recording supplies its microphone and system WAV tracks to OpenAI; preview fallback recordings continue to use the local demo.
+
+For a development run, the minimum setup is:
+
+```powershell
+$env:OPENAI_API_KEY = "your-openai-api-key"
+$env:MEETING_ASSISTANT_OPENAI_TRANSCRIPTION_MODEL = "gpt-4o-transcribe"
+$env:MEETING_ASSISTANT_OPENAI_SUMMARY_MODEL = "gpt-4.1-mini"
+dotnet run --project src/MeetingAssistant/MeetingAssistant.csproj
+```
+
+Never put an OpenAI key in source control or in the shareable installer. Each person should use a separate key or project key and set spending limits.
+
 ## Build a shareable installer
 
 The installer is self-contained, so another Windows machine does not need the .NET runtime. Firebase's Web API key and project id are written into `firebase.config.json` inside the package at build time. They are public Firebase client configuration values, but should still be supplied through environment variables rather than committed:

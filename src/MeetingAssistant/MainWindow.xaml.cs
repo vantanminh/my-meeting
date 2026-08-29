@@ -385,6 +385,12 @@ public partial class MainWindow : Window
             viewModel.Password = passwordBox.Password;
     }
 
+    private void OpenAiApiKeyBox_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel viewModel && sender is System.Windows.Controls.PasswordBox passwordBox)
+            viewModel.OpenAiApiKeyInput = passwordBox.Password;
+    }
+
     private void ShowWindow()
     {
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;

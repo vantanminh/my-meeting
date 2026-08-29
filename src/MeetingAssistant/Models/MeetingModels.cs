@@ -132,4 +132,6 @@ public sealed class RecordingData
     public DateTimeOffset StartedAt { get; init; }
     public TimeSpan Duration { get; init; }
     public AudioConfiguration Configuration { get; init; } = new();
+    public string? MicrophonePath { get; init; }
+    public string? SystemAudioPath { get; init; }
 }

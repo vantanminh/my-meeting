@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Net.Http;
 using System.Windows.Input;
 using System.Windows.Threading;
 using MeetingAssistant.Models;
@@ -54,6 +55,8 @@ public sealed class MainViewModel : ViewModelBase
     private readonly IGlobalHotkeyService _hotkey;
     private readonly JsonUserPreferencesStore _preferences;
     private readonly UserPreferences _savedPreferences;
+    private readonly OpenAiConfiguration _openAi;
+    private readonly OpenAiMeetingIntelligenceService _openAiIntelligence;
     private readonly DispatcherTimer _recordingTimer;
     private CancellationTokenSource? _processingCancellation;
     private RecordingData? _lastRecording;
@@ -81,6 +84,10 @@ public sealed class MainViewModel : ViewModelBase
     private string _retentionOption = "Keep recordings for 30 days";
     private string _selectedLanguage = "Tiếng Việt";
     private string _selectedTheme = nameof(ThemeMode.Dark);
+    private string _openAiApiKeyInput = string.Empty;
+    private string _openAiTranscriptionModel = OpenAiConfiguration.DefaultTranscriptionModel;
+    private string _openAiSummaryModel = OpenAiConfiguration.DefaultSummaryModel;
+    private string _openAiConnectionStatus = "Not tested yet";
     private double _microphoneLevel;
     private double _systemAudioLevel;
     private int _processingPercent;
@@ -99,6 +106,7 @@ public sealed class MainViewModel : ViewModelBase
     private bool _keepLocalCopy = true;
     private bool _syncPaused;
     private bool _startOnLogin = true;
+    private bool _isTestingOpenAi;
 
     public MainViewModel(AppServices services)
     {
@@ -111,12 +119,16 @@ public sealed class MainViewModel : ViewModelBase
         _hotkey = services.HotkeyService;
         _preferences = services.Preferences;
         _savedPreferences = _preferences.Load();
+        _openAi = services.OpenAiConfiguration;
+        _openAiIntelligence = services.OpenAiIntelligence;
         _selectedTheme = ThemeService.Parse(_savedPreferences.Theme).ToString();
         _selectedLanguage = string.Equals(_savedPreferences.Language, "en", StringComparison.OrdinalIgnoreCase) ? "English" : "Tiếng Việt";
         _retentionOption = _savedPreferences.RetentionOption;
         _keepLocalCopy = _savedPreferences.KeepLocalCopy;
         _syncPaused = _savedPreferences.SyncPaused;
         _startOnLogin = _savedPreferences.StartOnLogin;
+        _openAiTranscriptionModel = _openAi.TranscriptionModel;
+        _openAiSummaryModel = _openAi.SummaryModel;
         _cloud.IsPaused = _syncPaused;
         ThemeService.Apply(ThemeService.Parse(_selectedTheme));
         LocalizationService.SetLanguage(_selectedLanguage == "English" ? "en" : "vi");
@@ -134,6 +146,8 @@ public sealed class MainViewModel : ViewModelBase
         QualityOptions = ["Balanced · 48 kHz", "High quality · 48 kHz", "Compact · 16 kHz"];
         RetentionOptions = ["Keep recordings for 7 days", "Keep recordings for 30 days", "Keep recordings until deleted"];
         ThemeOptions = [nameof(ThemeMode.Dark), nameof(ThemeMode.Light)];
+        OpenAiTranscriptionModelOptions = ["gpt-4o-transcribe", "gpt-4o-mini-transcribe", "gpt-transcribe", "gpt-4o-transcribe-diarize", "whisper-1"];
+        OpenAiSummaryModelOptions = ["gpt-4.1-mini", "gpt-4o-mini", "gpt-4o"];
         LanguageOptions = ["Tiếng Việt", "English"];
         TranscriptFilterOptions = ["All speakers"];
         FilteredTranscript = [];
@@ -160,6 +174,7 @@ public sealed class MainViewModel : ViewModelBase
         SaveSpeakerCommand = new AsyncRelayCommand(SaveSpeakerAsync, () => true);
         SaveSettingsCommand = new AsyncRelayCommand(SaveSettingsAsync);
         ClearSearchCommand = new RelayCommand(_ => SearchQuery = string.Empty, _ => HasSearchQuery);
+        TestOpenAiCommand = new AsyncRelayCommand(TestOpenAiAsync, () => !IsTestingOpenAi);
     }
 
     public ObservableCollection<Meeting> Meetings { get; }
@@ -172,6 +187,8 @@ public sealed class MainViewModel : ViewModelBase
     public IReadOnlyList<string> RetentionOptions { get; }
     public IReadOnlyList<string> ThemeOptions { get; }
     public IReadOnlyList<string> LanguageOptions { get; }
+    public IReadOnlyList<string> OpenAiTranscriptionModelOptions { get; }
+    public IReadOnlyList<string> OpenAiSummaryModelOptions { get; }
     public ObservableCollection<string> TranscriptFilterOptions { get; }
 
     public ICommand NavigateCommand { get; }
@@ -195,6 +212,7 @@ public sealed class MainViewModel : ViewModelBase
     public AsyncRelayCommand SaveSpeakerCommand { get; }
     public AsyncRelayCommand SaveSettingsCommand { get; }
     public RelayCommand ClearSearchCommand { get; }
+    public AsyncRelayCommand TestOpenAiCommand { get; }
 
     public WorkspaceView CurrentView
     {
@@ -399,6 +417,23 @@ public sealed class MainViewModel : ViewModelBase
             LocalizationService.SetLanguage(value == "English" ? "en" : "vi");
         }
     }
+    public string OpenAiApiKeyInput { get => _openAiApiKeyInput; set => SetProperty(ref _openAiApiKeyInput, value); }
+    public string OpenAiTranscriptionModel { get => _openAiTranscriptionModel; set => SetProperty(ref _openAiTranscriptionModel, value); }
+    public string OpenAiSummaryModel { get => _openAiSummaryModel; set => SetProperty(ref _openAiSummaryModel, value); }
+    public string OpenAiKeyStatus => _openAi.IsConfigured
+        ? $"{LocalizationService.Translate("Configured")} · {_openAi.ApiKeySource}"
+        : LocalizationService.Translate("Not configured · local demo will be used");
+    public string OpenAiConnectionStatus { get => LocalizationService.Translate(_openAiConnectionStatus); private set => SetProperty(ref _openAiConnectionStatus, value); }
+    public string OpenAiProviderLabel => LocalizationService.Translate(_intelligence.ProviderLabel);
+    public bool IsTestingOpenAi
+    {
+        get => _isTestingOpenAi;
+        private set
+        {
+            if (!SetProperty(ref _isTestingOpenAi, value)) return;
+            TestOpenAiCommand.RaiseCanExecuteChanged();
+        }
+    }
     public bool StartOnLogin { get => _startOnLogin; set => SetProperty(ref _startOnLogin, value); }
     public string SettingsSyncDescription => LocalizationService.Translate(SyncPaused ? "Meetings stay on this device until you turn sync back on." : "Cloud sync will run in the background when Firebase is connected.");
     public string HotkeyStatus => LocalizationService.Translate(_hotkey.IsRegistered ? "Registered · Ctrl + Shift + R" : "Unavailable · another app may own this shortcut");
@@ -467,7 +502,8 @@ public sealed class MainViewModel : ViewModelBase
             nameof(AuthHeading), nameof(AuthSubheading), nameof(AuthSubmitLabel), nameof(AuthSwitchLabel), nameof(DeviceTestStatus),
             nameof(RecordingStatus), nameof(ActiveSpeaker), nameof(RecordingIndicatorLabel), nameof(CaptureProvider),
             nameof(CurrentMeetingTitle), nameof(ProcessingStage), nameof(ProcessingMessage), nameof(SettingsSyncDescription),
-            nameof(HotkeyStatus), nameof(ToastMessage), nameof(LastSyncLabel), nameof(PageTitle), nameof(PageDescription)
+            nameof(HotkeyStatus), nameof(ToastMessage), nameof(LastSyncLabel), nameof(PageTitle), nameof(PageDescription),
+            nameof(OpenAiKeyStatus), nameof(OpenAiConnectionStatus), nameof(OpenAiProviderLabel)
         })
         {
             OnPropertyChanged(propertyName);
@@ -786,6 +822,13 @@ public sealed class MainViewModel : ViewModelBase
             ProcessingStage = "Processing paused";
             ProcessingMessage = "Your capture is still available. Retry whenever you are ready.";
         }
+        catch (OpenAiServiceException exception)
+        {
+            IsProcessing = false;
+            ProcessingHasError = true;
+            ProcessingStage = "We hit a processing problem";
+            ProcessingMessage = exception.Message;
+        }
         catch (Exception)
         {
             IsProcessing = false;
@@ -855,16 +898,47 @@ public sealed class MainViewModel : ViewModelBase
 
     private async Task SaveSettingsAsync()
     {
+        if (!string.IsNullOrWhiteSpace(OpenAiApiKeyInput))
+            _openAi.SaveUserEnvironment(OpenAiApiKeyInput, OpenAiTranscriptionModel, OpenAiSummaryModel);
+
         _savedPreferences.Theme = SelectedTheme;
         _savedPreferences.Language = SelectedLanguage == "English" ? "en" : "vi";
         _savedPreferences.RetentionOption = RetentionOption;
         _savedPreferences.KeepLocalCopy = KeepLocalCopy;
         _savedPreferences.SyncPaused = SyncPaused;
         _savedPreferences.StartOnLogin = StartOnLogin;
+        _savedPreferences.TranscriptionModel = OpenAiTranscriptionModel;
+        _savedPreferences.SummaryModel = OpenAiSummaryModel;
         await _preferences.SaveAsync(_savedPreferences);
         OnPropertyChanged(nameof(HotkeyStatus));
         OnPropertyChanged(nameof(SettingsSyncDescription));
+        OnPropertyChanged(nameof(OpenAiKeyStatus));
+        OnPropertyChanged(nameof(OpenAiProviderLabel));
         ToastMessage = "Settings saved · your preferences apply to the next recording";
+    }
+
+    private async Task TestOpenAiAsync()
+    {
+        IsTestingOpenAi = true;
+        OpenAiConnectionStatus = "Testing OpenAI connection…";
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(OpenAiApiKeyInput))
+                _openAi.SaveUserEnvironment(OpenAiApiKeyInput, OpenAiTranscriptionModel, OpenAiSummaryModel);
+
+            var result = await _openAiIntelligence.TestConnectionAsync();
+            OpenAiConnectionStatus = result.Message;
+            OnPropertyChanged(nameof(OpenAiKeyStatus));
+            OnPropertyChanged(nameof(OpenAiProviderLabel));
+        }
+        catch (HttpRequestException)
+        {
+            OpenAiConnectionStatus = "OpenAI is not reachable. Check the network and try again.";
+        }
+        finally
+        {
+            IsTestingOpenAi = false;
+        }
     }
 
     public void Dispose()

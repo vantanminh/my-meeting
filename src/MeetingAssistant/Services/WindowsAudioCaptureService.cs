@@ -22,6 +22,8 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
     private WaveFileWriter? _systemWriter;
     private AudioConfiguration _configuration = new();
     private DateTimeOffset _startedAt;
+    private string? _microphonePath;
+    private string? _systemAudioPath;
     private bool _usingFallback;
     private bool _isPaused;
     private double _lastMicLevel;
@@ -45,6 +47,8 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
         _configuration = configuration;
         _startedAt = DateTimeOffset.Now;
         _isPaused = false;
+        _microphonePath = null;
+        _systemAudioPath = null;
 
         try
         {
@@ -115,7 +119,9 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
             Title = _configuration.Title,
             StartedAt = _startedAt,
             Duration = duration,
-            Configuration = _configuration
+            Configuration = _configuration,
+            MicrophonePath = _microphonePath,
+            SystemAudioPath = _systemAudioPath
         };
     }
 
@@ -124,13 +130,15 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
         Directory.CreateDirectory(AppPaths.RecordingsDirectory);
         var sessionDirectory = Path.Combine(AppPaths.RecordingsDirectory, $"{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(sessionDirectory);
+        _microphonePath = Path.Combine(sessionDirectory, "microphone.wav");
+        _systemAudioPath = Path.Combine(sessionDirectory, "system-audio.wav");
 
         using var enumerator = new MMDeviceEnumerator();
         var microphoneDevice = enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Multimedia);
         _microphone = new WasapiCapture(microphoneDevice);
         _systemAudio = new WasapiLoopbackCapture();
-        _microphoneWriter = new WaveFileWriter(Path.Combine(sessionDirectory, "microphone.wav"), _microphone.WaveFormat);
-        _systemWriter = new WaveFileWriter(Path.Combine(sessionDirectory, "system-audio.wav"), _systemAudio.WaveFormat);
+        _microphoneWriter = new WaveFileWriter(_microphonePath!, _microphone.WaveFormat);
+        _systemWriter = new WaveFileWriter(_systemAudioPath!, _systemAudio.WaveFormat);
 
         _microphone.DataAvailable += MicrophoneDataAvailable;
         _systemAudio.DataAvailable += SystemAudioDataAvailable;

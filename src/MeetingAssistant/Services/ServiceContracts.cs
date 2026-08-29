@@ -54,6 +54,8 @@ public sealed record ProcessingResult(Meeting Meeting);
 
 public interface IMeetingIntelligenceService
 {
+    string ProviderLabel { get; }
+
     Task<ProcessingResult> ProcessAsync(
         RecordingData recording,
         IProgress<ProcessingProgress> progress,

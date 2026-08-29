@@ -8,6 +8,8 @@ namespace MeetingAssistant.Services;
 /// </summary>
 public sealed class DemoMeetingIntelligenceService : IMeetingIntelligenceService
 {
+    public string ProviderLabel => "Local demo";
+
     public async Task<ProcessingResult> ProcessAsync(
         RecordingData recording,
         IProgress<ProcessingProgress> progress,

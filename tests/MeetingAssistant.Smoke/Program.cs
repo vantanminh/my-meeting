@@ -1,3 +1,7 @@
+using System.Net;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using MeetingAssistant.Models;
 using MeetingAssistant.Services;
 using MeetingAssistant.ViewModels;
@@ -42,6 +46,33 @@ try
     var syncResult = await services.CloudSyncService.SyncAsync(processed.Meeting);
     if (!syncResult.Success) failures.Add("local/cloud sync should preserve a meeting when Firebase is not configured");
 
+    var fakeAudioDirectory = Path.Combine(Path.GetTempPath(), $"meeting-assistant-openai-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(fakeAudioDirectory);
+    var fakeMicrophonePath = Path.Combine(fakeAudioDirectory, "microphone.wav");
+    var fakeSystemAudioPath = Path.Combine(fakeAudioDirectory, "system-audio.wav");
+    await File.WriteAllBytesAsync(fakeMicrophonePath, new byte[128]);
+    await File.WriteAllBytesAsync(fakeSystemAudioPath, new byte[128]);
+    using (var fakeHttpClient = new HttpClient(new FakeOpenAiHandler()))
+    {
+        var fakeOpenAi = new OpenAiMeetingIntelligenceService(
+            new OpenAiConfiguration("test-key", "gpt-4o-transcribe", "gpt-4.1-mini"),
+            httpClient: fakeHttpClient);
+        var openAiRecording = new RecordingData
+        {
+            Title = "OpenAI smoke test",
+            StartedAt = DateTimeOffset.Now,
+            Duration = TimeSpan.FromSeconds(10),
+            Configuration = new AudioConfiguration(),
+            MicrophonePath = fakeMicrophonePath,
+            SystemAudioPath = fakeSystemAudioPath
+        };
+        var openAiProcessed = await fakeOpenAi.ProcessAsync(openAiRecording, new Progress<ProcessingProgress>(_ => { }));
+        if (openAiProcessed.Meeting.Transcript.Count != 2) failures.Add("OpenAI adapter should merge both audio tracks");
+        if (openAiProcessed.Meeting.Summary.ActionItems.Count != 1) failures.Add("OpenAI adapter should parse a structured summary");
+        if (openAiProcessed.Meeting.Status != MeetingStatus.Ready) failures.Add("OpenAI adapter should return a ready meeting");
+    }
+    Directory.Delete(fakeAudioDirectory, recursive: true);
+
     using var capture = new WindowsAudioCaptureService();
     Console.WriteLine("capture start...");
     await capture.StartAsync(new AudioConfiguration { Title = "Capture smoke test" });
@@ -70,3 +101,41 @@ if (failures.Count > 0)
 
 Console.WriteLine("Smoke checks passed: auth state, audio setup, WASAPI/fallback capture, processing, transcript, speakers, summary, and progress.");
 return 0;
+
+sealed class FakeOpenAiHandler : HttpMessageHandler
+{
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        if (request.RequestUri?.AbsolutePath == "/v1/audio/transcriptions")
+        {
+            await request.Content!.ReadAsByteArrayAsync(cancellationToken);
+            return JsonResponse(JsonSerializer.Serialize(new { text = "A transcript returned by the fake OpenAI server." }));
+        }
+
+        if (request.RequestUri?.AbsolutePath == "/v1/responses")
+        {
+            var summary = JsonSerializer.Serialize(new
+            {
+                overview = "A concise smoke-test summary.",
+                keyPoints = new[] { "The fake provider was reached." },
+                decisions = new[] { "Keep the adapter covered by a deterministic test." },
+                actionItems = new[] { new { text = "Review the OpenAI adapter", owner = "You", due = "Tomorrow", isComplete = false } },
+                deadlines = Array.Empty<object>(),
+                questions = Array.Empty<string>(),
+                importantMoments = new[] { "The structured response was parsed." }
+            });
+            return JsonResponse(JsonSerializer.Serialize(new { output_text = summary }));
+        }
+
+        if (request.RequestUri?.AbsolutePath == "/v1/models")
+            return JsonResponse("{\"data\":[]}");
+
+        return new HttpResponseMessage(HttpStatusCode.NotFound);
+    }
+
+    private static HttpResponseMessage JsonResponse(string json)
+        => new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
+}

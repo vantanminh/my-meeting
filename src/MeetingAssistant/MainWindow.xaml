@@ -1001,6 +1001,37 @@
                                 </Border>
                                 <Border Style="{StaticResource CardStyle}" Margin="0,0,0,14">
                                     <StackPanel>
+                                        <Grid>
+                                            <TextBlock Text="AI PROVIDERS" Style="{StaticResource SectionLabel}" />
+                                            <Border Background="{StaticResource BlueDimBrush}" CornerRadius="11" Padding="8,4" HorizontalAlignment="Right">
+                                                <TextBlock Text="{Binding OpenAiProviderLabel}" FontSize="9" Foreground="{StaticResource BlueBrush}" />
+                                            </Border>
+                                        </Grid>
+                                        <TextBlock Text="OpenAI API key" FontSize="12" Margin="0,17,0,7" />
+                                        <PasswordBox x:Name="OpenAiApiKeyBox" PasswordChanged="OpenAiApiKeyBox_PasswordChanged" />
+                                        <TextBlock Text="{Binding OpenAiKeyStatus}" FontSize="10" Foreground="{StaticResource SubtleBrush}" Margin="0,7,0,0" />
+                                        <Grid Margin="0,16,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <StackPanel Margin="0,0,8,0">
+                                                <TextBlock Text="Transcription model" FontSize="11" Margin="0,0,0,7" />
+                                                <ComboBox ItemsSource="{Binding OpenAiTranscriptionModelOptions}" IsEditable="True" Text="{Binding OpenAiTranscriptionModel, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                                                <TextBlock Text="Summary model" FontSize="11" Margin="0,0,0,7" />
+                                                <ComboBox ItemsSource="{Binding OpenAiSummaryModelOptions}" IsEditable="True" Text="{Binding OpenAiSummaryModel, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid Margin="0,16,0,0">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding OpenAiConnectionStatus}" FontSize="10" Foreground="{StaticResource SubtleBrush}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                                <TextBlock Text="The key is stored in this Windows user profile, never in the installer." FontSize="10" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,5,0,0" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Style="{StaticResource SecondaryButton}" Command="{Binding TestOpenAiCommand}" Content="Test connection" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Top" />
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource CardStyle}" Margin="0,0,0,14">
+                                    <StackPanel>
                                         <TextBlock Text="SHORTCUTS" Style="{StaticResource SectionLabel}" />
                                         <Grid Margin="0,17,0,0">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
