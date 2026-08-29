@@ -124,6 +124,13 @@ try
         if (openAiProcessed.Meeting.Status != MeetingStatus.Ready) failures.Add("OpenAI adapter should return a ready meeting");
         if (fakeHttpHandler.AudioPayloads.Count != 2 || fakeHttpHandler.AudioPayloads.Any(payload => !IsPcm16Wave(payload)))
             failures.Add("OpenAI adapter should normalize float WAV tracks to valid PCM16 WAV uploads");
+        if (fakeHttpHandler.TranscriptionBodies.Count == 0
+            || fakeHttpHandler.TranscriptionBodies.Any(body => body.Contains("filename*", StringComparison.OrdinalIgnoreCase)))
+            failures.Add("OpenAI uploads should send a quoted filename without RFC 5987 filename*");
+        if (fakeHttpHandler.TranscriptionBodies.Any(body =>
+                !body.Contains("filename=", StringComparison.OrdinalIgnoreCase)
+                || (!body.Contains(".wav", StringComparison.OrdinalIgnoreCase))))
+            failures.Add("OpenAI uploads should include a .wav filename on the file part");
 
         var tinySystemPath = Path.Combine(fakeAudioDirectory, "tiny-system-audio.wav");
         using (var tinyWriter = new WaveFileWriter(tinySystemPath, new WaveFormat(16_000, 16, 1)))
@@ -162,6 +169,70 @@ try
         catch (OpenAiServiceException exception) when (exception.Message.Contains("incomplete or unsupported", StringComparison.OrdinalIgnoreCase))
         {
             // Expected: the original recording remains available for retry.
+        }
+
+        try
+        {
+            var unauthorizedHandler = new FakeOpenAiHandler
+            {
+                TranscriptionStatus = HttpStatusCode.Unauthorized,
+                TranscriptionErrorJson = "{\"error\":{\"message\":\"Incorrect API key provided\",\"code\":\"invalid_api_key\"}}"
+            };
+            using var unauthorizedClient = new HttpClient(unauthorizedHandler);
+            var unauthorizedOpenAi = new OpenAiMeetingIntelligenceService(
+                new OpenAiConfiguration("test-key", "gpt-4o-transcribe", "gpt-4.1-mini"),
+                httpClient: unauthorizedClient);
+            await unauthorizedOpenAi.ProcessAsync(
+                new RecordingData
+                {
+                    Title = "Unauthorized OpenAI smoke test",
+                    StartedAt = DateTimeOffset.Now,
+                    Duration = TimeSpan.FromSeconds(1),
+                    Configuration = new AudioConfiguration(),
+                    MicrophonePath = fakeMicrophonePath
+                },
+                new Progress<ProcessingProgress>(_ => { }));
+            failures.Add("OpenAI adapter should surface invalid API key errors");
+        }
+        catch (OpenAiServiceException exception)
+        {
+            if (!exception.Message.Contains("API key", StringComparison.OrdinalIgnoreCase)
+                || exception.Message.Contains("corrupted", StringComparison.OrdinalIgnoreCase))
+            {
+                failures.Add("OpenAI adapter should not map API key failures to a corrupted-audio message");
+            }
+        }
+
+        try
+        {
+            var audioErrorHandler = new FakeOpenAiHandler
+            {
+                TranscriptionStatus = HttpStatusCode.BadRequest,
+                TranscriptionErrorJson = "{\"error\":{\"message\":\"Audio file might be corrupted or unsupported\"}}"
+            };
+            using var audioErrorClient = new HttpClient(audioErrorHandler);
+            var audioErrorOpenAi = new OpenAiMeetingIntelligenceService(
+                new OpenAiConfiguration("test-key", "gpt-4o-transcribe", "gpt-4.1-mini"),
+                httpClient: audioErrorClient);
+            await audioErrorOpenAi.ProcessAsync(
+                new RecordingData
+                {
+                    Title = "Corrupt audio OpenAI smoke test",
+                    StartedAt = DateTimeOffset.Now,
+                    Duration = TimeSpan.FromSeconds(1),
+                    Configuration = new AudioConfiguration(),
+                    MicrophonePath = fakeMicrophonePath
+                },
+                new Progress<ProcessingProgress>(_ => { }));
+            failures.Add("OpenAI adapter should surface unreadable audio errors");
+        }
+        catch (OpenAiServiceException exception)
+        {
+            if (!exception.Message.Contains("could not read the uploaded audio", StringComparison.OrdinalIgnoreCase)
+                || exception.Message.Contains("Audio file might be corrupted or unsupported", StringComparison.OrdinalIgnoreCase))
+            {
+                failures.Add("OpenAI adapter should replace the generic corrupted-audio provider text with a retryable local message");
+            }
         }
 
         var connection = await fakeOpenAi.TestConnectionAsync();
@@ -393,7 +464,7 @@ static bool IsPcm16Wave(byte[] payload)
             var channels = BinaryPrimitives.ReadUInt16LittleEndian(payload.AsSpan(chunkDataStart + 2, 2));
             var sampleRate = BinaryPrimitives.ReadInt32LittleEndian(payload.AsSpan(chunkDataStart + 4, 4));
             var bitsPerSample = BinaryPrimitives.ReadUInt16LittleEndian(payload.AsSpan(chunkDataStart + 14, 2));
-            hasPcm16Format = audioFormat == 1 && channels == 1 && sampleRate == 16_000 && bitsPerSample == 16;
+            hasPcm16Format = chunkSize == 16 && audioFormat == 1 && channels == 1 && sampleRate == 16_000 && bitsPerSample == 16;
         }
         else if (payload.AsSpan(offset, 4).SequenceEqual("data"u8) && chunkSize > 0)
         {
@@ -411,6 +482,9 @@ sealed class FakeOpenAiHandler : HttpMessageHandler
 {
     public string? LastAuthorization { get; private set; }
     public List<byte[]> AudioPayloads { get; } = [];
+    public List<string> TranscriptionBodies { get; } = [];
+    public HttpStatusCode TranscriptionStatus { get; set; } = HttpStatusCode.OK;
+    public string? TranscriptionErrorJson { get; set; }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -419,8 +493,20 @@ sealed class FakeOpenAiHandler : HttpMessageHandler
         if (request.RequestUri?.AbsolutePath == "/v1/audio/transcriptions")
         {
             var requestBody = await request.Content!.ReadAsByteArrayAsync(cancellationToken);
+            TranscriptionBodies.Add(Encoding.ASCII.GetString(requestBody));
             var wavPayload = ExtractWavPayload(requestBody);
             if (wavPayload.Length > 0) AudioPayloads.Add(wavPayload);
+            if (TranscriptionStatus != HttpStatusCode.OK)
+            {
+                return new HttpResponseMessage(TranscriptionStatus)
+                {
+                    Content = new StringContent(
+                        TranscriptionErrorJson ?? "{\"error\":{\"message\":\"failed\"}}",
+                        Encoding.UTF8,
+                        "application/json")
+                };
+            }
+
             return JsonResponse(JsonSerializer.Serialize(new { text = "A transcript returned by the fake OpenAI server." }));
         }
 

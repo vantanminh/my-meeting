@@ -198,12 +198,31 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
     {
         if (_microphone is not null) _microphone.DataAvailable -= MicrophoneDataAvailable;
         if (_systemAudio is not null) _systemAudio.DataAvailable -= SystemAudioDataAvailable;
-        try { _microphone?.StopRecording(); } catch { }
-        try { _systemAudio?.StopRecording(); } catch { }
+
+        using var microphoneStopped = new ManualResetEventSlim(_microphone is null);
+        using var systemStopped = new ManualResetEventSlim(_systemAudio is null);
+
+        void OnMicrophoneStopped(object? sender, StoppedEventArgs args) => microphoneStopped.Set();
+        void OnSystemStopped(object? sender, StoppedEventArgs args) => systemStopped.Set();
+
+        if (_microphone is not null) _microphone.RecordingStopped += OnMicrophoneStopped;
+        if (_systemAudio is not null) _systemAudio.RecordingStopped += OnSystemStopped;
+
+        try { _microphone?.StopRecording(); } catch { microphoneStopped.Set(); }
+        try { _systemAudio?.StopRecording(); } catch { systemStopped.Set(); }
+
+        microphoneStopped.Wait(TimeSpan.FromSeconds(5));
+        systemStopped.Wait(TimeSpan.FromSeconds(5));
+
+        if (_microphone is not null) _microphone.RecordingStopped -= OnMicrophoneStopped;
+        if (_systemAudio is not null) _systemAudio.RecordingStopped -= OnSystemStopped;
+
         try { _microphone?.Dispose(); } catch { }
         try { _systemAudio?.Dispose(); } catch { }
         lock (_writerLock)
         {
+            try { _microphoneWriter?.Flush(); } catch { }
+            try { _systemWriter?.Flush(); } catch { }
             try { _microphoneWriter?.Dispose(); } catch { }
             try { _systemWriter?.Dispose(); } catch { }
         }

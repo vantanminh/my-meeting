@@ -173,55 +173,76 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _configuration.ApiKey);
 
         using var form = new MultipartFormDataContent();
-        await using var stream = File.OpenRead(track.Path);
-        using var fileContent = new StreamContent(stream);
+        var wavBytes = await File.ReadAllBytesAsync(track.Path, cancellationToken);
+        using var fileContent = new ByteArrayContent(wavBytes);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
-        form.Add(fileContent, "file", Path.GetFileName(track.Path));
+        AddMultipartFile(form, fileContent, "file", UploadFileName(track.Path));
         form.Add(new StringContent(model), "model");
         form.Add(new StringContent(diarized ? "diarized_json" : "json"), "response_format");
         if (diarized) form.Add(new StringContent("auto"), "chunking_strategy");
         request.Content = form;
 
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-            throw new OpenAiServiceException(await ErrorMessageAsync(response, "OpenAI transcription failed.", cancellationToken));
-
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        HttpResponseMessage response;
         try
         {
-            using var document = JsonDocument.Parse(body);
-            var root = document.RootElement;
-            var segments = new List<TranscriptSegment>();
-            if (root.TryGetProperty("segments", out var segmentArray) && segmentArray.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var segment in segmentArray.EnumerateArray())
-                {
-                    var text = segment.TryGetProperty("text", out var textElement) ? textElement.GetString()?.Trim() : null;
-                    if (string.IsNullOrWhiteSpace(text)) continue;
-                    var start = ReadDouble(segment, "start");
-                    var end = ReadDouble(segment, "end");
-                    var serverSpeaker = segment.TryGetProperty("speaker", out var speakerElement) ? speakerElement.GetString() : null;
-                    var speakerName = string.IsNullOrWhiteSpace(serverSpeaker) ? track.DisplayName : $"{track.DisplayName} · {serverSpeaker}";
-                    segments.Add(CreateSegment(speakerName, start + track.Offset.TotalSeconds, end + track.Offset.TotalSeconds, text));
-                }
-            }
-
-            if (segments.Count > 0) return segments;
-
-            var transcript = root.TryGetProperty("text", out var transcriptElement) ? transcriptElement.GetString()?.Trim() : null;
-            var trackDuration = track.Duration > TimeSpan.Zero ? track.Duration : fallbackDuration;
-            return string.IsNullOrWhiteSpace(transcript)
-                ? []
-                : [CreateSegment(
-                    track.DisplayName,
-                    track.Offset.TotalSeconds,
-                    track.Offset.TotalSeconds + Math.Max(trackDuration.TotalSeconds, 1),
-                    transcript)];
+            response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
-        catch (JsonException)
+        catch (HttpRequestException exception)
         {
-            throw new OpenAiServiceException("OpenAI returned an unexpected transcription response.");
+            throw new OpenAiServiceException("OpenAI is not reachable. Check the network and try again.", exception);
         }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+                throw new OpenAiServiceException(await ErrorMessageAsync(response, "OpenAI transcription failed.", cancellationToken));
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            try
+            {
+                return ParseTranscript(body, track, fallbackDuration);
+            }
+            catch (JsonException)
+            {
+                throw new OpenAiServiceException("OpenAI returned an unexpected transcription response.");
+            }
+        }
+
+    }
+
+    private static IReadOnlyList<TranscriptSegment> ParseTranscript(
+        string body,
+        AudioTrack track,
+        TimeSpan fallbackDuration)
+    {
+        using var document = JsonDocument.Parse(body);
+        var root = document.RootElement;
+        var segments = new List<TranscriptSegment>();
+        if (root.TryGetProperty("segments", out var segmentArray) && segmentArray.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var segment in segmentArray.EnumerateArray())
+            {
+                var text = segment.TryGetProperty("text", out var textElement) ? textElement.GetString()?.Trim() : null;
+                if (string.IsNullOrWhiteSpace(text)) continue;
+                var start = ReadDouble(segment, "start");
+                var end = ReadDouble(segment, "end");
+                var serverSpeaker = segment.TryGetProperty("speaker", out var speakerElement) ? speakerElement.GetString() : null;
+                var speakerName = string.IsNullOrWhiteSpace(serverSpeaker) ? track.DisplayName : $"{track.DisplayName} · {serverSpeaker}";
+                segments.Add(CreateSegment(speakerName, start + track.Offset.TotalSeconds, end + track.Offset.TotalSeconds, text));
+            }
+        }
+
+        if (segments.Count > 0) return segments;
+
+        var transcript = root.TryGetProperty("text", out var transcriptElement) ? transcriptElement.GetString()?.Trim() : null;
+        var trackDuration = track.Duration > TimeSpan.Zero ? track.Duration : fallbackDuration;
+        return string.IsNullOrWhiteSpace(transcript)
+            ? []
+            : [CreateSegment(
+                track.DisplayName,
+                track.Offset.TotalSeconds,
+                track.Offset.TotalSeconds + Math.Max(trackDuration.TotalSeconds, 1),
+                transcript)];
     }
 
     private async Task<MeetingSummary> SummarizeAsync(
@@ -361,8 +382,8 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
     {
         try
         {
-            using var reader = new AudioFileReader(track.Path);
-            ISampleProvider sampleProvider = reader;
+            using var source = OpenSourceAudio(track.Path);
+            ISampleProvider sampleProvider = source.ToSampleProvider();
             if (sampleProvider.WaveFormat.Channels == 2)
             {
                 var stereo = new StereoToMonoSampleProvider(sampleProvider)
@@ -383,21 +404,20 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
                 sampleProvider = new WdlResamplingSampleProvider(sampleProvider, ProviderSampleRate);
 
             var pcm16 = new SampleToWaveProvider16(sampleProvider);
-            using var writer = new WaveFileWriter(outputPath, pcm16.WaveFormat);
+            using var pcmData = new MemoryStream();
             var buffer = new byte[Math.Max(pcm16.WaveFormat.AverageBytesPerSecond, 4096)];
-            var totalAudioBytes = 0;
-
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var bytesRead = pcm16.Read(buffer, 0, buffer.Length);
                 if (bytesRead <= 0) break;
-                writer.Write(buffer, 0, bytesRead);
-                totalAudioBytes += bytesRead;
+                pcmData.Write(buffer, 0, bytesRead);
             }
 
-            if (totalAudioBytes == 0)
+            if (pcmData.Length == 0)
                 throw new EmptyAudioTrackException();
+
+            WriteCanonicalPcm16MonoWav(outputPath, pcmData.ToArray());
         }
         catch (OperationCanceledException)
         {
@@ -457,7 +477,7 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
                 temporaryDirectory,
                 $"{TrackFileStem(source)}-{chunkIndex + 1:000}.wav");
             long chunkBytesRead = 0;
-            using (var writer = new WaveFileWriter(chunkPath, sourceReader.WaveFormat))
+            using (var chunkData = new MemoryStream())
             {
                 while (chunkBytesRead < maxChunkDataBytes)
                 {
@@ -465,15 +485,17 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
                     var requestedBytes = (int)Math.Min(buffer.Length, maxChunkDataBytes - chunkBytesRead);
                     var bytesRead = sourceReader.Read(buffer, 0, requestedBytes);
                     if (bytesRead <= 0) break;
-                    writer.Write(buffer, 0, bytesRead);
+                    chunkData.Write(buffer, 0, bytesRead);
                     chunkBytesRead += bytesRead;
                 }
-            }
 
-            if (chunkBytesRead == 0)
-            {
-                DeleteFile(chunkPath);
-                break;
+                if (chunkBytesRead == 0)
+                {
+                    DeleteFile(chunkPath);
+                    break;
+                }
+
+                WriteCanonicalPcm16MonoWav(chunkPath, chunkData.ToArray());
             }
 
             chunks.Add(new AudioTrack(
@@ -572,19 +594,87 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
         return value[start..(end + 1)];
     }
 
+    private static WaveStream OpenSourceAudio(string path)
+    {
+        FileStream? fileStream = null;
+        try
+        {
+            fileStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            return new WaveFileReader(fileStream);
+        }
+        catch (Exception) when (fileStream is not null)
+        {
+            fileStream.Dispose();
+            return new AudioFileReader(path);
+        }
+        catch (Exception)
+        {
+            return new AudioFileReader(path);
+        }
+    }
+
+    private static void WriteCanonicalPcm16MonoWav(string path, byte[] pcmData)
+    {
+        var alignedLength = pcmData.Length - (pcmData.Length % 2);
+        if (alignedLength <= 0) throw new EmptyAudioTrackException();
+
+        using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: false);
+        writer.Write("RIFF"u8);
+        writer.Write(36 + alignedLength);
+        writer.Write("WAVE"u8);
+        writer.Write("fmt "u8);
+        writer.Write(16);
+        writer.Write((ushort)1);
+        writer.Write((ushort)1);
+        writer.Write(ProviderSampleRate);
+        writer.Write(ProviderSampleRate * 2);
+        writer.Write((ushort)2);
+        writer.Write((ushort)16);
+        writer.Write("data"u8);
+        writer.Write(alignedLength);
+        writer.Write(pcmData, 0, alignedLength);
+        writer.Flush();
+    }
+
+    private static void AddMultipartFile(MultipartFormDataContent form, HttpContent content, string name, string fileName)
+    {
+        form.Add(content, name, fileName);
+        var disposition = content.Headers.ContentDisposition;
+        if (disposition is null) return;
+
+        // .NET also sets filename* (RFC 5987). OpenAI's parser often ignores that
+        // and then treats the part as having no extension, returning
+        // "Audio file might be corrupted or unsupported".
+        disposition.Name = name;
+        disposition.FileName = fileName;
+        disposition.FileNameStar = null;
+    }
+
+    private static string UploadFileName(string path)
+    {
+        var name = Path.GetFileName(path);
+        return string.IsNullOrWhiteSpace(name) || !name.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)
+            ? "audio.wav"
+            : name;
+    }
+
     private static async Task<string> ErrorMessageAsync(
         HttpResponseMessage response,
         string fallback,
         CancellationToken cancellationToken = default)
     {
+        string? apiMessage = null;
+        string? apiCode = null;
         try
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             using var document = JsonDocument.Parse(body);
             if (document.RootElement.TryGetProperty("error", out var error))
             {
-                var message = error.TryGetProperty("message", out var messageElement) ? messageElement.GetString() : null;
-                if (!string.IsNullOrWhiteSpace(message)) return $"{fallback} {message}";
+                apiMessage = error.TryGetProperty("message", out var messageElement) ? messageElement.GetString() : null;
+                apiCode = error.TryGetProperty("code", out var codeElement) ? codeElement.GetString() : null;
+                apiCode ??= error.TryGetProperty("type", out var typeElement) ? typeElement.GetString() : null;
             }
         }
         catch (JsonException)
@@ -592,8 +682,37 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
             // Keep a stable, user-facing message when a proxy returns non-JSON.
         }
 
-        return $"{fallback} ({(int)response.StatusCode})";
+        return MapProviderError(response.StatusCode, apiCode, apiMessage, fallback);
     }
+
+    private static string MapProviderError(
+        System.Net.HttpStatusCode statusCode,
+        string? apiCode,
+        string? apiMessage,
+        string fallback)
+    {
+        var status = (int)statusCode;
+        var code = apiCode ?? string.Empty;
+        var message = apiMessage ?? string.Empty;
+
+        if (status == 401 || ContainsAny(code, "invalid_api_key") || ContainsAny(message, "invalid api key", "incorrect api key"))
+            return "OpenAI rejected the API key. Check the key in Settings and retry.";
+        if (status == 429 || ContainsAny(code, "rate_limit") || ContainsAny(message, "rate limit"))
+            return "OpenAI is rate limiting requests. Wait a moment and retry.";
+        if (ContainsAny(code, "insufficient_quota") || ContainsAny(message, "quota", "billing"))
+            return "OpenAI quota has been exceeded. Check your OpenAI account and retry.";
+        if (status == 413 || ContainsAny(message, "maximum content size", "file is too large", "25mb"))
+            return "The recording is too large for OpenAI. Record a shorter meeting and retry.";
+        if (ContainsAny(message, "corrupted", "unsupported", "invalid file format", "could not be decoded"))
+            return "OpenAI could not read the uploaded audio. Your recording is still available; retry processing or record again.";
+        if (!string.IsNullOrWhiteSpace(message))
+            return $"{fallback} {message.Trim()}";
+
+        return $"{fallback} ({status})";
+    }
+
+    private static bool ContainsAny(string value, params string[] tokens)
+        => tokens.Any(token => value.Contains(token, StringComparison.OrdinalIgnoreCase));
 
     private sealed record AudioTrack(
         string Path,
