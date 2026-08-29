@@ -377,8 +377,22 @@
                     </Grid>
                 </Border>
 
-                <ScrollViewer x:Name="ContentScrollViewer" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly" CanContentScroll="False" Focusable="False">
-                    <Grid x:Name="ContentFrame" Margin="32,27,32,48">
+                <ScrollViewer x:Name="ContentScrollViewer"
+                              Grid.Row="1"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalContentAlignment="Top"
+                              HorizontalContentAlignment="Stretch"
+                              PanningMode="VerticalOnly"
+                              CanContentScroll="False"
+                              Focusable="True"
+                              IsTabStop="True"
+                              Padding="0,0,0,24">
+                    <Grid x:Name="ContentFrame" Margin="32,27,32,48" VerticalAlignment="Top">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="72" />
+                        </Grid.RowDefinitions>
                         <!-- Meetings dashboard -->
                         <Grid Style="{StaticResource DashboardSurface}">
                             <StackPanel>
@@ -1046,6 +1060,7 @@
                                 <Button Style="{StaticResource PrimaryButton}" Command="{Binding SaveSettingsCommand}" HorizontalAlignment="Left" Padding="22,10" Content="Save settings" />
                             </StackPanel>
                         </Grid>
+                        <Border Grid.Row="1" Height="72" IsHitTestVisible="False" />
                     </Grid>
                 </ScrollViewer>
 
