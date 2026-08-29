@@ -20,15 +20,20 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
     private readonly OpenAiConfiguration _configuration;
     private readonly DemoMeetingIntelligenceService _localFallback;
     private readonly HttpClient _httpClient;
+    private readonly TimeSpan _connectionTimeout;
 
     public OpenAiMeetingIntelligenceService(
         OpenAiConfiguration configuration,
         DemoMeetingIntelligenceService? localFallback = null,
-        HttpClient? httpClient = null)
+        HttpClient? httpClient = null,
+        TimeSpan? connectionTimeout = null)
     {
         _configuration = configuration;
         _localFallback = localFallback ?? new DemoMeetingIntelligenceService();
         _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+        _connectionTimeout = connectionTimeout ?? TimeSpan.FromSeconds(12);
+        if (_connectionTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(connectionTimeout), "The connection timeout must be positive.");
     }
 
     public string ProviderLabel => _configuration.IsConfigured
@@ -105,19 +110,21 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
 
         try
         {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(_connectionTimeout);
             using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.openai.com/v1/models");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _configuration.ApiKey);
-            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             if (response.IsSuccessStatusCode)
                 return new(true, "OpenAI connection is ready.");
 
-            return new(false, await ErrorMessageAsync(response, "OpenAI rejected the connection."));
+            return new(false, await ErrorMessageAsync(response, "OpenAI rejected the connection.", timeout.Token));
         }
         catch (HttpRequestException)
         {
             return new(false, "OpenAI is not reachable. Check the network and try again.");
         }
-        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             return new(false, "OpenAI took too long to respond.");
         }
@@ -145,7 +152,7 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
 
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
-            throw new OpenAiServiceException(await ErrorMessageAsync(response, "OpenAI transcription failed."));
+            throw new OpenAiServiceException(await ErrorMessageAsync(response, "OpenAI transcription failed.", cancellationToken));
 
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         try
@@ -204,7 +211,7 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _configuration.ApiKey);
         using var response = await _httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
-            throw new OpenAiServiceException(await ErrorMessageAsync(response, "OpenAI summary failed."));
+            throw new OpenAiServiceException(await ErrorMessageAsync(response, "OpenAI summary failed.", cancellationToken));
 
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         try
@@ -285,11 +292,14 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
         return value[start..(end + 1)];
     }
 
-    private static async Task<string> ErrorMessageAsync(HttpResponseMessage response, string fallback)
+    private static async Task<string> ErrorMessageAsync(
+        HttpResponseMessage response,
+        string fallback,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            var body = await response.Content.ReadAsStringAsync();
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
             using var document = JsonDocument.Parse(body);
             if (document.RootElement.TryGetProperty("error", out var error))
             {

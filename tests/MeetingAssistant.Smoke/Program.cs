@@ -119,8 +119,25 @@ try
         if (openAiProcessed.Meeting.Transcript.Count != 2) failures.Add("OpenAI adapter should merge both audio tracks");
         if (openAiProcessed.Meeting.Summary.ActionItems.Count != 1) failures.Add("OpenAI adapter should parse a structured summary");
         if (openAiProcessed.Meeting.Status != MeetingStatus.Ready) failures.Add("OpenAI adapter should return a ready meeting");
+
+        var connection = await fakeOpenAi.TestConnectionAsync();
+        if (!connection.Success) failures.Add("OpenAI connection test should accept a reachable API");
     }
     Directory.Delete(fakeAudioDirectory, recursive: true);
+
+    using (var hangingHttpClient = new HttpClient(new HangingOpenAiHandler()))
+    {
+        var hangingOpenAi = new OpenAiMeetingIntelligenceService(
+            new OpenAiConfiguration("test-key"),
+            httpClient: hangingHttpClient,
+            connectionTimeout: TimeSpan.FromMilliseconds(50));
+        var startedAt = DateTime.UtcNow;
+        var connection = await hangingOpenAi.TestConnectionAsync();
+        if (connection.Success || !connection.Message.Contains("too long", StringComparison.OrdinalIgnoreCase))
+            failures.Add("OpenAI connection test should report a timeout when the network hangs");
+        if (DateTime.UtcNow - startedAt > TimeSpan.FromSeconds(2))
+            failures.Add("OpenAI connection timeout should return promptly");
+    }
 
     using var capture = new WindowsAudioCaptureService();
     Console.WriteLine("capture start...");
@@ -187,6 +204,15 @@ sealed class FakeOpenAiHandler : HttpMessageHandler
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
+}
+
+sealed class HangingOpenAiHandler : HttpMessageHandler
+{
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        return new HttpResponseMessage(HttpStatusCode.OK);
+    }
 }
 
 sealed class FakeFirebaseHandler : HttpMessageHandler
