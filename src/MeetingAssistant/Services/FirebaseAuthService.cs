@@ -13,12 +13,14 @@ public sealed class FirebaseAuthService : IAuthService
 {
     private readonly FirebaseConfiguration _configuration;
     private readonly LocalAuthService _localFallback;
+    private readonly FirebaseSessionStore _sessionStore;
     private readonly HttpClient _httpClient = new();
 
     public FirebaseAuthService(FirebaseConfiguration configuration, LocalAuthService localFallback)
     {
         _configuration = configuration;
         _localFallback = localFallback;
+        _sessionStore = new FirebaseSessionStore();
     }
 
     public UserSession? CurrentSession { get; private set; }
@@ -26,6 +28,29 @@ public sealed class FirebaseAuthService : IAuthService
 
     public async Task<UserSession?> RestoreAsync()
     {
+        if (_configuration.IsConfigured)
+        {
+            var storedSession = await _sessionStore.LoadAsync();
+            if (storedSession is not null)
+            {
+                var refreshed = await RefreshSessionAsync(storedSession);
+                if (refreshed is not null)
+                {
+                    CurrentSession = refreshed;
+                    await _localFallback.CacheSessionAsync(refreshed);
+                    return CurrentSession;
+                }
+
+                await _sessionStore.ClearAsync();
+                await _localFallback.SignOutAsync();
+                return null;
+            }
+
+            var localSession = await _localFallback.RestoreAsync();
+            CurrentSession = localSession?.IsOffline == true ? localSession : null;
+            return CurrentSession;
+        }
+
         CurrentSession = await _localFallback.RestoreAsync();
         return CurrentSession;
     }
@@ -75,6 +100,7 @@ public sealed class FirebaseAuthService : IAuthService
 
     public async Task<AuthResult> SignInOfflineAsync()
     {
+        await _sessionStore.ClearAsync();
         var result = await _localFallback.SignInOfflineAsync();
         CurrentSession = result.Session;
         return result;
@@ -83,6 +109,7 @@ public sealed class FirebaseAuthService : IAuthService
     public async Task SignOutAsync()
     {
         CurrentSession = null;
+        await _sessionStore.ClearAsync();
         await _localFallback.SignOutAsync();
     }
 
@@ -114,10 +141,12 @@ public sealed class FirebaseAuthService : IAuthService
                 Email = root.TryGetProperty("email", out var emailElement) ? emailElement.GetString() ?? email : email,
                 DisplayName = string.IsNullOrWhiteSpace(displayName) ? DisplayNameFromEmail(email) : displayName.Trim(),
                 IsOffline = false,
-                AccessToken = root.TryGetProperty("idToken", out var tokenElement) ? tokenElement.GetString() : null
+                AccessToken = root.TryGetProperty("idToken", out var tokenElement) ? tokenElement.GetString() : null,
+                RefreshToken = root.TryGetProperty("refreshToken", out var refreshTokenElement) ? refreshTokenElement.GetString() : null
             };
             CurrentSession = session;
             await _localFallback.CacheSessionAsync(session);
+            await _sessionStore.SaveAsync(session);
             return new(true, session);
         }
         catch (HttpRequestException)
@@ -127,6 +156,38 @@ public sealed class FirebaseAuthService : IAuthService
         catch (JsonException)
         {
             return new(false, Error: "Firebase returned an unexpected response. Try again.");
+        }
+    }
+
+    private async Task<UserSession?> RefreshSessionAsync(UserSession storedSession)
+    {
+        if (string.IsNullOrWhiteSpace(storedSession.RefreshToken)) return null;
+
+        try
+        {
+            var endpoint = $"https://securetoken.googleapis.com/v1/token?key={Uri.EscapeDataString(_configuration.ApiKey!)}";
+            using var response = await _httpClient.PostAsync(endpoint, new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "refresh_token",
+                ["refresh_token"] = storedSession.RefreshToken
+            }));
+            if (!response.IsSuccessStatusCode) return null;
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = document.RootElement;
+            storedSession.UserId = root.TryGetProperty("user_id", out var userId) ? userId.GetString() ?? storedSession.UserId : storedSession.UserId;
+            storedSession.AccessToken = root.TryGetProperty("id_token", out var idToken) ? idToken.GetString() : null;
+            storedSession.RefreshToken = root.TryGetProperty("refresh_token", out var refreshToken) ? refreshToken.GetString() ?? storedSession.RefreshToken : storedSession.RefreshToken;
+            await _sessionStore.SaveAsync(storedSession);
+            return storedSession.AccessToken is null ? null : storedSession;
+        }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
         }
     }
 
