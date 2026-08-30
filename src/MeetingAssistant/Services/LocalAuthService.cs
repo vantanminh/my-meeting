@@ -19,9 +19,8 @@ public sealed class LocalAuthService : IAuthService
 
     public LocalAuthService()
     {
-        var directory = AppPaths.DataDirectory;
-        Directory.CreateDirectory(directory);
-        _sessionPath = Path.Combine(directory, "session.json");
+        Directory.CreateDirectory(AppPaths.RootDirectory);
+        _sessionPath = AppPaths.SessionPath;
     }
 
     public UserSession? CurrentSession { get; private set; }
@@ -87,9 +86,9 @@ public sealed class LocalAuthService : IAuthService
         await Task.Delay(180);
         var session = new UserSession
         {
-            UserId = "local-demo-user",
+            UserId = "offline",
             Email = "you@local.workspace",
-            DisplayName = "Alex Morgan",
+            DisplayName = "Local workspace",
             IsOffline = true
         };
         await PersistAsync(session);
@@ -130,13 +129,4 @@ public sealed class LocalAuthService : IAuthService
         await using var stream = File.Create(_sessionPath);
         await JsonSerializer.SerializeAsync(stream, session, JsonOptions);
     }
-}
-
-public static class AppPaths
-{
-    public static string DataDirectory => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "MeetingAssistant");
-
-    public static string RecordingsDirectory => Path.Combine(DataDirectory, "Recordings");
 }
