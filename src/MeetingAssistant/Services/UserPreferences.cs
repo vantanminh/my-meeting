@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using MeetingAssistant.Models;
 
 namespace MeetingAssistant.Services;
 
@@ -10,9 +11,17 @@ public sealed class UserPreferences
     public string RetentionOption { get; set; } = "Keep recordings for 30 days";
     public bool KeepLocalCopy { get; set; } = true;
     public bool SyncPaused { get; set; }
-    public bool StartOnLogin { get; set; } = true;
+    public bool StartOnLogin { get; set; }
+    public bool MinimizeToTrayOnClose { get; set; }
+    public bool OnboardingCompleted { get; set; }
     public string TranscriptionModel { get; set; } = "gpt-4o-transcribe";
     public string SummaryModel { get; set; } = "gpt-4.1-mini";
+    public string TranscriptionLanguage { get; set; } = "auto";
+    public string MicrophoneId { get; set; } = "default";
+    public string SystemAudioId { get; set; } = "default";
+    public string Quality { get; set; } = "Balanced · 48 kHz";
+    public UpdatePolicy UpdatePolicy { get; set; } = UpdatePolicy.Ask;
+    public string HotkeyDisplay { get; set; } = "Ctrl + Shift + R";
 }
 
 public sealed class JsonUserPreferencesStore
@@ -23,15 +32,15 @@ public sealed class JsonUserPreferencesStore
         PropertyNameCaseInsensitive = true
     };
 
-    private readonly string _path = Path.Combine(AppPaths.DataDirectory, "settings.json");
+    private string PathName => AppPaths.SettingsPath;
 
     public UserPreferences Load()
     {
-        if (!File.Exists(_path)) return new UserPreferences();
+        if (!File.Exists(PathName)) return new UserPreferences();
 
         try
         {
-            var json = File.ReadAllText(_path);
+            var json = File.ReadAllText(PathName);
             return JsonSerializer.Deserialize<UserPreferences>(json, JsonOptions) ?? new UserPreferences();
         }
         catch (IOException)
@@ -46,13 +55,13 @@ public sealed class JsonUserPreferencesStore
 
     public async Task SaveAsync(UserPreferences preferences)
     {
-        Directory.CreateDirectory(AppPaths.DataDirectory);
-        var temporaryPath = $"{_path}.{Guid.NewGuid():N}.tmp";
+        Directory.CreateDirectory(AppPaths.RootDirectory);
+        var temporaryPath = $"{PathName}.{Guid.NewGuid():N}.tmp";
         await using (var stream = File.Create(temporaryPath))
         {
             await JsonSerializer.SerializeAsync(stream, preferences, JsonOptions);
         }
 
-        File.Move(temporaryPath, _path, overwrite: true);
+        File.Move(temporaryPath, PathName, overwrite: true);
     }
 }

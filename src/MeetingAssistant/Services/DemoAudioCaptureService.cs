@@ -62,13 +62,23 @@ public sealed class DemoAudioCaptureService : IAudioCaptureService
         });
     }
 
+    public async Task<DeviceTestResult> TestAsync(AudioConfiguration configuration, CancellationToken cancellationToken = default)
+    {
+        await StartAsync(configuration, cancellationToken);
+        await Task.Delay(400, cancellationToken);
+        var mic = 0.42;
+        var system = 0.31;
+        await StopAsync();
+        return new DeviceTestResult(true, "Preview fallback is producing levels · check Windows microphone permission for live capture", mic, system);
+    }
+
     private void EmitLevels(object? state)
     {
         if (!IsCapturing || _isPaused) return;
 
         var mic = Math.Clamp(0.38 + _random.NextDouble() * 0.5, 0.05, 0.98);
         var system = Math.Clamp(0.22 + _random.NextDouble() * 0.6, 0.04, 0.92);
-        var speakers = new[] { "You", "Priya Shah", "Marcus Lee", "Jamie Chen" };
+        var speakers = new[] { "You", "Meeting participant" };
         var speaker = speakers[_random.Next(speakers.Length)];
         LevelsChanged?.Invoke(this, new AudioLevelsEventArgs(mic, system, speaker));
     }
