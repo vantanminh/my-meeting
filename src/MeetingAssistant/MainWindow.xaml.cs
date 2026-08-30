@@ -19,6 +19,7 @@ public partial class MainWindow : Window
         _hotkeyService = hotkeyService;
         _trayService = trayService;
         DataContext = ViewModel;
+        ViewModel.UsePrompt(new WindowUserPrompt());
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
     }
 
@@ -137,6 +138,7 @@ public partial class MainWindow : Window
         MeetingsNavLabel.Visibility = textVisibility;
         MeetingsNavBadge.Visibility = textVisibility;
         SpeakersNavLabel.Visibility = textVisibility;
+        ActionsNavLabel.Visibility = textVisibility;
         SettingsNavLabel.Visibility = textVisibility;
         QuickStartLabel.Visibility = textVisibility;
         QuickStartButtonLabel.Visibility = textVisibility;
@@ -146,6 +148,7 @@ public partial class MainWindow : Window
         var contentAlignment = compact ? WpfHorizontalAlignment.Center : WpfHorizontalAlignment.Left;
         MeetingsNavButton.HorizontalContentAlignment = contentAlignment;
         SpeakersNavButton.HorizontalContentAlignment = contentAlignment;
+        ActionsNavButton.HorizontalContentAlignment = contentAlignment;
         SettingsNavButton.HorizontalContentAlignment = contentAlignment;
         QuickStartButton.HorizontalContentAlignment = contentAlignment;
         AccountButton.HorizontalContentAlignment = contentAlignment;
@@ -153,6 +156,7 @@ public partial class MainWindow : Window
         var navPadding = compact ? new Thickness(8, 10, 8, 10) : new Thickness(13, 11, 13, 11);
         MeetingsNavButton.Padding = navPadding;
         SpeakersNavButton.Padding = navPadding;
+        ActionsNavButton.Padding = navPadding;
         SettingsNavButton.Padding = navPadding;
         QuickStartButton.Padding = navPadding;
         AccountButton.Padding = compact ? new Thickness(0, 8, 0, 8) : new Thickness(7, 8, 7, 8);
@@ -344,8 +348,32 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Window_Closing(object? sender, CancelEventArgs e)
+    private async void Window_Closing(object? sender, CancelEventArgs e)
     {
+        if (ViewModel.MinimizeToTrayOnClose && !ViewModel.IsConfirmingClose)
+        {
+            e.Cancel = true;
+            Hide();
+            return;
+        }
+
+        if (ViewModel.IsRecording || ViewModel.IsProcessing)
+        {
+            if (!ViewModel.ConfirmExit())
+            {
+                e.Cancel = true;
+                return;
+            }
+
+            if (ViewModel.IsRecording)
+            {
+                e.Cancel = true;
+                await ViewModel.HandleExitAsync();
+                Close();
+                return;
+            }
+        }
+
         ViewModel.PropertyChanged -= ViewModel_PropertyChanged;
         ViewModel.Dispose();
     }
@@ -393,6 +421,35 @@ public partial class MainWindow : Window
             viewModel.OpenAiApiKeyInput = passwordBox.Password;
     }
 
+    private void TranscriptTimestamp_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: MeetingAssistant.Models.TranscriptSegment segment })
+            ViewModel.SeekTo(segment);
+    }
+
+    private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (ViewModel.CurrentView != WorkspaceView.Detail) return;
+        if (e.OriginalSource is System.Windows.Controls.TextBox or System.Windows.Controls.PasswordBox)
+            return;
+
+        if (e.Key == Key.Space)
+        {
+            ViewModel.HandlePlaybackKeys("Space");
+            e.Handled = true;
+        }
+        else if (e.Key == Key.J)
+        {
+            ViewModel.HandlePlaybackKeys("J");
+            e.Handled = true;
+        }
+        else if (e.Key == Key.K)
+        {
+            ViewModel.HandlePlaybackKeys("K");
+            e.Handled = true;
+        }
+    }
+
     private void ShowWindow()
     {
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
@@ -402,4 +459,24 @@ public partial class MainWindow : Window
         Topmost = false;
         Focus();
     }
+}
+
+public sealed class WindowUserPrompt : IUserPrompt
+{
+    public bool Confirm(string title, string message)
+        => System.Windows.MessageBox.Show(message, title, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
+
+    public string? SaveFile(string title, string filter, string defaultName)
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = title,
+            Filter = filter,
+            FileName = defaultName
+        };
+        return dialog.ShowDialog() == true ? dialog.FileName : null;
+    }
+
+    public void CopyText(string text)
+        => System.Windows.Clipboard.SetText(text ?? string.Empty);
 }

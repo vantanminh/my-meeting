@@ -53,12 +53,12 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
     {
         var tracks = AudioTracks(recording).ToList();
         if (!_configuration.IsConfigured)
-            return await _localFallback.ProcessAsync(recording, progress, cancellationToken);
+        {
+            throw new OpenAiServiceException(
+                "Add an OpenAI API key in Settings to transcribe this recording. Your audio is still saved locally.");
+        }
         if (tracks.Count == 0)
         {
-            if (!HasCapturedAudioPath(recording))
-                return await _localFallback.ProcessAsync(recording, progress, cancellationToken);
-
             throw new OpenAiServiceException(
                 "No usable recording audio was found. Your recording is still available; record a new meeting and retry.");
         }
@@ -84,7 +84,8 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
         if (transcriptSegments.Count == 0)
             throw new OpenAiServiceException("OpenAI did not return any transcript text.");
 
-        transcriptSegments = transcriptSegments.OrderBy(segment => segment.Start).ThenBy(segment => segment.SpeakerName).ToList();
+        transcriptSegments = TranscriptRepair.CollapseOverlaps(
+            transcriptSegments.OrderBy(segment => segment.Start).ThenBy(segment => segment.SpeakerName).ToList()).ToList();
         progress.Report(new ProcessingProgress(58, 2, "Recognizing speakers", "Grouping microphone and system-audio turns"));
         var speakers = transcriptSegments
             .GroupBy(segment => segment.SpeakerName, StringComparer.OrdinalIgnoreCase)
@@ -114,11 +115,28 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
             AudioSources = $"{recording.Configuration.Microphone} + {recording.Configuration.SystemAudio}",
             Speakers = speakers,
             Transcript = transcriptSegments,
-            Summary = summary
+            Summary = summary,
+            MicrophonePath = recording.MicrophonePath,
+            SystemAudioPath = recording.SystemAudioPath,
+            SessionDirectory = recording.SessionDirectory
         };
 
         progress.Report(new ProcessingProgress(100, 4, "Ready", "Your meeting is ready to review"));
         return new ProcessingResult(meeting);
+    }
+
+    public async Task<MeetingSummary> SummarizeAsync(Meeting meeting, CancellationToken cancellationToken = default)
+    {
+        if (!_configuration.IsConfigured)
+            throw new OpenAiServiceException("Add an OpenAI API key in Settings to refresh this summary.");
+        meeting.EnsureCollections();
+        var recording = new RecordingData
+        {
+            Title = meeting.Title,
+            StartedAt = meeting.StartedAt,
+            Duration = meeting.Duration
+        };
+        return await SummarizeAsync(recording, meeting.Transcript, cancellationToken);
     }
 
     public Task<OpenAiConnectionResult> TestConnectionAsync(CancellationToken cancellationToken = default)
@@ -178,6 +196,11 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
         AddMultipartFile(form, fileContent, "file", UploadFileName(track.Path));
         form.Add(new StringContent(model), "model");
+        if (!string.IsNullOrWhiteSpace(_configuration.TranscriptionLanguage)
+            && !string.Equals(_configuration.TranscriptionLanguage, "auto", StringComparison.OrdinalIgnoreCase))
+        {
+            form.Add(new StringContent(_configuration.TranscriptionLanguage), "language");
+        }
         form.Add(new StringContent(diarized ? "diarized_json" : "json"), "response_format");
         if (diarized) form.Add(new StringContent("auto"), "chunking_strategy");
         request.Content = form;

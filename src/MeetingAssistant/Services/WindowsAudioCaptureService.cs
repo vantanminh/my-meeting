@@ -124,8 +124,58 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
             Duration = duration,
             Configuration = _configuration,
             MicrophonePath = _microphonePath,
-            SystemAudioPath = _systemAudioPath
+            SystemAudioPath = _systemAudioPath,
+            SessionDirectory = Path.GetDirectoryName(_microphonePath)
         };
+    }
+
+    public async Task<DeviceTestResult> TestAsync(AudioConfiguration configuration, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await StartAsync(configuration, cancellationToken);
+            var started = DateTimeOffset.Now;
+            var peakMic = 0.0;
+            var peakSystem = 0.0;
+            EventHandler<AudioLevelsEventArgs> handler = (_, args) =>
+            {
+                peakMic = Math.Max(peakMic, args.Microphone);
+                peakSystem = Math.Max(peakSystem, args.SystemAudio);
+            };
+            LevelsChanged += handler;
+            try
+            {
+                while (DateTimeOffset.Now - started < TimeSpan.FromSeconds(1.6))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await Task.Delay(80, cancellationToken);
+                }
+            }
+            finally
+            {
+                LevelsChanged -= handler;
+            }
+
+            var testRecording = await StopAsync();
+            RecordingSafety.DeleteSessionAudio(testRecording);
+            if (_usingFallback)
+                return new DeviceTestResult(false, "Windows did not open the selected devices. Check microphone permission.", peakMic, peakSystem);
+
+            var ok = peakMic > 0.04 || peakSystem > 0.04;
+            return new DeviceTestResult(
+                ok,
+                ok ? "Both sources are producing signal · ready to record" : "Devices opened but stayed silent. Speak or play meeting audio, then test again.",
+                peakMic,
+                peakSystem);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return new DeviceTestResult(false, "Windows denied a capture device. Open privacy settings and allow microphone access.", 0, 0);
+        }
     }
 
     private void StartWasapiCapture()
@@ -137,9 +187,10 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
         _systemAudioPath = Path.Combine(sessionDirectory, "system-audio.wav");
 
         using var enumerator = new MMDeviceEnumerator();
-        var microphoneDevice = enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Multimedia);
+        var microphoneDevice = ResolveDevice(enumerator, DataFlow.Capture, _configuration.MicrophoneId);
+        var systemDevice = ResolveDevice(enumerator, DataFlow.Render, _configuration.SystemAudioId);
         _microphone = new WasapiCapture(microphoneDevice);
-        _systemAudio = new WasapiLoopbackCapture();
+        _systemAudio = systemDevice is null ? new WasapiLoopbackCapture() : new WasapiLoopbackCapture(systemDevice);
         _microphoneWriter = new WaveFileWriter(_microphonePath!, _microphone.WaveFormat);
         _systemWriter = new WaveFileWriter(_systemAudioPath!, _systemAudio.WaveFormat);
 
@@ -148,6 +199,23 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
         _microphone.StartRecording();
         _systemAudio.StartRecording();
         _stopwatch.Restart();
+    }
+
+    private static MMDevice ResolveDevice(MMDeviceEnumerator enumerator, DataFlow flow, string? deviceId)
+    {
+        if (!string.IsNullOrWhiteSpace(deviceId) && !string.Equals(deviceId, "default", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                return enumerator.GetDevice(deviceId);
+            }
+            catch
+            {
+                // Fall back to the default endpoint when a saved id is stale.
+            }
+        }
+
+        return enumerator.GetDefaultAudioEndpoint(flow, Role.Multimedia);
     }
 
     private void MicrophoneDataAvailable(object? sender, WaveInEventArgs args)

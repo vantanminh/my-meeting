@@ -47,6 +47,7 @@ public interface IAudioCaptureService : IDisposable
     Task PauseAsync();
     Task ResumeAsync();
     Task<RecordingData> StopAsync();
+    Task<DeviceTestResult> TestAsync(AudioConfiguration configuration, CancellationToken cancellationToken = default);
 }
 
 public sealed record ProcessingProgress(int Percent, int StageIndex, string Stage, string Message);
@@ -59,6 +60,10 @@ public interface IMeetingIntelligenceService
     Task<ProcessingResult> ProcessAsync(
         RecordingData recording,
         IProgress<ProcessingProgress> progress,
+        CancellationToken cancellationToken = default);
+
+    Task<MeetingSummary> SummarizeAsync(
+        Meeting meeting,
         CancellationToken cancellationToken = default);
 }
 
@@ -83,4 +88,19 @@ public interface ITrayService : IDisposable
 {
     void Initialize(Action showWindow, Action toggleRecording);
     void SetRecordingState(bool isRecording, TimeSpan elapsed);
+}
+
+public interface IUserPrompt
+{
+    bool Confirm(string title, string message);
+    string? SaveFile(string title, string filter, string defaultName);
+    void CopyText(string text);
+}
+
+public sealed class SilentUserPrompt : IUserPrompt
+{
+    public string? LastCopied { get; private set; }
+    public bool Confirm(string title, string message) => true;
+    public string? SaveFile(string title, string filter, string defaultName) => null;
+    public void CopyText(string text) => LastCopied = text;
 }

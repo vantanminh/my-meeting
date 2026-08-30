@@ -14,12 +14,12 @@ public sealed class FirebaseSessionStore
         PropertyNameCaseInsensitive = true
     };
 
-    private readonly string _path = Path.Combine(AppPaths.DataDirectory, "firebase-session.json");
+    private string PathName => AppPaths.FirebaseSessionPath;
 
     public async Task SaveAsync(UserSession session)
     {
         if (string.IsNullOrWhiteSpace(session.RefreshToken)) return;
-        Directory.CreateDirectory(AppPaths.DataDirectory);
+        Directory.CreateDirectory(AppPaths.RootDirectory);
         var protectedToken = ProtectedData.Protect(
             Encoding.UTF8.GetBytes(session.RefreshToken),
             optionalEntropy: null,
@@ -32,22 +32,22 @@ public sealed class FirebaseSessionStore
             RefreshToken = Convert.ToBase64String(protectedToken)
         };
 
-        var temporaryPath = $"{_path}.{Guid.NewGuid():N}.tmp";
+        var temporaryPath = $"{PathName}.{Guid.NewGuid():N}.tmp";
         await using (var stream = File.Create(temporaryPath))
         {
             await JsonSerializer.SerializeAsync(stream, stored, JsonOptions);
         }
 
-        File.Move(temporaryPath, _path, overwrite: true);
+        File.Move(temporaryPath, PathName, overwrite: true);
     }
 
     public async Task<UserSession?> LoadAsync()
     {
-        if (!File.Exists(_path)) return null;
+        if (!File.Exists(PathName)) return null;
 
         try
         {
-            await using var stream = File.OpenRead(_path);
+            await using var stream = File.OpenRead(PathName);
             var stored = await JsonSerializer.DeserializeAsync<StoredSession>(stream, JsonOptions);
             if (stored is null || string.IsNullOrWhiteSpace(stored.RefreshToken)) return null;
             var protectedToken = Convert.FromBase64String(stored.RefreshToken);
@@ -87,7 +87,7 @@ public sealed class FirebaseSessionStore
 
     public Task ClearAsync()
     {
-        if (File.Exists(_path)) File.Delete(_path);
+        if (File.Exists(PathName)) File.Delete(PathName);
         return Task.CompletedTask;
     }
 

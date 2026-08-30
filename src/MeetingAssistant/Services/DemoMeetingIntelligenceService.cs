@@ -70,6 +70,14 @@ public sealed class DemoMeetingIntelligenceService : IMeetingIntelligenceService
         };
 
         progress.Report(new ProcessingProgress(100, stages.Length - 1, "Ready", "Your meeting is ready to review"));
+        meeting.Notes = "Preview only · this transcript was not generated from your audio.";
         return new ProcessingResult(meeting);
+    }
+
+    public Task<MeetingSummary> SummarizeAsync(Meeting meeting, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        meeting.EnsureCollections();
+        return Task.FromResult(meeting.Summary);
     }
 }

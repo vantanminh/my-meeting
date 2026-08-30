@@ -44,10 +44,12 @@ public sealed class OpenAiConfiguration
     public const string SummaryModelEnvironmentVariable = "MEETING_ASSISTANT_OPENAI_SUMMARY_MODEL";
     public const string DefaultTranscriptionModel = "gpt-4o-transcribe";
     public const string DefaultSummaryModel = "gpt-4.1-mini";
+    public const string TranscriptionLanguageEnvironmentVariable = "MEETING_ASSISTANT_OPENAI_TRANSCRIPTION_LANGUAGE";
 
     private readonly string? _apiKeyOverride;
     private readonly string? _transcriptionModelOverride;
     private readonly string? _summaryModelOverride;
+    private readonly string? _transcriptionLanguageOverride;
     private readonly IUserEnvironmentStore _userEnvironment;
 
     private static readonly TimeSpan UserEnvironmentWriteTimeout = TimeSpan.FromSeconds(5);
@@ -56,11 +58,13 @@ public sealed class OpenAiConfiguration
         string? apiKeyOverride = null,
         string? transcriptionModelOverride = null,
         string? summaryModelOverride = null,
+        string? transcriptionLanguageOverride = null,
         IUserEnvironmentStore? userEnvironment = null)
     {
         _apiKeyOverride = apiKeyOverride;
         _transcriptionModelOverride = transcriptionModelOverride;
         _summaryModelOverride = summaryModelOverride;
+        _transcriptionLanguageOverride = transcriptionLanguageOverride;
         _userEnvironment = userEnvironment ?? new WindowsUserEnvironmentStore();
     }
 
@@ -78,6 +82,11 @@ public sealed class OpenAiConfiguration
         ReadEnvironment(SummaryModelEnvironmentVariable),
         _summaryModelOverride,
         DefaultSummaryModel) ?? DefaultSummaryModel;
+
+    public string TranscriptionLanguage => FirstValue(
+        ReadEnvironment(TranscriptionLanguageEnvironmentVariable),
+        _transcriptionLanguageOverride,
+        "auto") ?? "auto";
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ApiKey);
 
