@@ -9,21 +9,102 @@ using MeetingAssistant.ViewModels;
 using NAudio.Wave;
 
 var failures = new List<string>();
+var smokeRoot = Path.Combine(Path.GetTempPath(), $"meeting-assistant-smoke-{Guid.NewGuid():N}");
+Directory.CreateDirectory(smokeRoot);
+AppPaths.UseRoot(smokeRoot);
+AppPaths.SetCurrentUser("smoke-user");
 var services = new AppServices();
 
 try
 {
     var viewModel = new MainViewModel(services);
     if (viewModel.CurrentView != WorkspaceView.Auth) failures.Add("new sessions should begin on auth");
-    if (viewModel.MicrophoneOptions.Count < 1 || viewModel.SystemAudioOptions.Count < 1)
+    if (viewModel.MicrophoneDevices.Count < 1 || viewModel.SystemAudioDevices.Count < 1)
         failures.Add("audio setup should expose both source lists");
+    var greeting = GreetingCopy.TimeOfDay(DateTimeOffset.Now);
+    if (greeting is not ("Good morning, " or "Good afternoon, " or "Good evening, "))
+        failures.Add("greeting should follow the time of day");
     viewModel.Dispose();
 
     var storedMeetings = await services.MeetingRepository.LoadAsync();
-    if (storedMeetings.Count < 3) failures.Add("a new workspace should have useful starter meetings");
-    await services.MeetingRepository.SaveAsync(storedMeetings);
+    if (storedMeetings.Count != 0) failures.Add("a new workspace should start empty without seed meetings");
+    var sampleMeetings = JsonMeetingRepository.CreateSampleMeetings();
+    await services.MeetingRepository.SaveAsync(sampleMeetings);
     var reloadedMeetings = await services.MeetingRepository.LoadAsync();
-    if (reloadedMeetings.Count != storedMeetings.Count) failures.Add("meeting cache should round-trip through JSON");
+    if (reloadedMeetings.Count != sampleMeetings.Count) failures.Add("meeting cache should round-trip through JSON");
+
+    var corruptPath = AppPaths.MeetingsPath;
+    await File.WriteAllTextAsync(corruptPath, "{not-json");
+    var repository = new JsonMeetingRepository();
+    var recovered = await repository.LoadAsync();
+    if (recovered.Count != 0 || !Directory.GetFiles(AppPaths.DataDirectory, "meetings.json.bak-*").Any())
+        failures.Add("a corrupt meetings cache should be quarantined and open empty");
+    await services.MeetingRepository.SaveAsync(sampleMeetings);
+
+    var isolatedA = Path.Combine(smokeRoot, "user-a");
+    AppPaths.UseRoot(isolatedA);
+    AppPaths.SetCurrentUser("alice");
+    await services.MeetingRepository.SaveAsync(sampleMeetings);
+    AppPaths.SetCurrentUser("bob");
+    var bobMeetings = await services.MeetingRepository.LoadAsync();
+    if (bobMeetings.Count != 0) failures.Add("switching users should isolate meeting files");
+    AppPaths.UseRoot(smokeRoot);
+    AppPaths.SetCurrentUser("smoke-user");
+
+    var overlap = TranscriptRepair.CollapseOverlaps(
+    [
+        new TranscriptSegment { SpeakerId = "you", SpeakerName = "You", Start = TimeSpan.FromSeconds(1), Text = "Hello there team" },
+        new TranscriptSegment { SpeakerId = "guest", SpeakerName = "Meeting participant", Start = TimeSpan.FromSeconds(1.2), Text = "Hello there team" }
+    ]);
+    if (overlap.Count != 1 || overlap[0].SpeakerName != "You")
+        failures.Add("overlapping duplicate turns should collapse to the host track");
+
+    var export = MeetingExport.Build(sampleMeetings[0]);
+    if (!export.Markdown.Contains(sampleMeetings[0].Title) || !export.Json.Contains("Transcript"))
+        failures.Add("meeting export should include title and transcript JSON");
+
+    var retentionDir = Path.Combine(smokeRoot, "old-recordings", "stale-session");
+    Directory.CreateDirectory(retentionDir);
+    File.WriteAllText(Path.Combine(retentionDir, "microphone.wav"), "x");
+    Directory.SetCreationTimeUtc(retentionDir, DateTime.UtcNow.AddDays(-40));
+    var removed = RetentionPolicy.Sweep(Path.Combine(smokeRoot, "old-recordings"), TimeSpan.FromDays(30), DateTimeOffset.UtcNow);
+    if (removed < 1) failures.Add("retention sweep should delete expired recording folders");
+
+    if (DiskBudget.WarningFor(10 * 1024 * 1024, null) is null)
+        failures.Add("disk budget should warn when free space is critically low");
+
+    if (AuthValidation.ValidateSignIn("bad", "123") is null || AuthValidation.ValidateSignUp("", "a@b.com", "password") is null)
+        failures.Add("auth validation should reject incomplete credentials before a network call");
+
+    var editable = new List<TranscriptSegment>
+    {
+        new() { SpeakerId = "you", SpeakerName = "You", Start = TimeSpan.FromSeconds(1), End = TimeSpan.FromSeconds(4), Text = "Hello there team" },
+        new() { SpeakerId = "guest", SpeakerName = "Guest", Start = TimeSpan.FromSeconds(5), End = TimeSpan.FromSeconds(8), Text = "Next idea" }
+    };
+    TranscriptEditing.Split(editable, editable[0], 6);
+    if (editable.Count != 3) failures.Add("splitting a turn should insert a second segment");
+    TranscriptEditing.MergeWithNext(editable, editable[0]);
+    if (editable.Count != 2) failures.Add("merging adjacent turns should collapse them");
+    var copied = TranscriptEditing.CopyMarkdown(editable);
+    if (!copied.Contains("You:")) failures.Add("copied transcript should include speaker names");
+
+    var monday = new DateTime(2026, 8, 24);
+    var weekMeetings = new[]
+    {
+        new Meeting { StartedAt = new DateTimeOffset(monday.AddDays(1), TimeSpan.Zero), Summary = new MeetingSummary { ActionItems = [new() { Text = "Open", IsComplete = false }] }, SyncState = SyncState.Pending },
+        new Meeting { StartedAt = new DateTimeOffset(monday.AddDays(-8), TimeSpan.Zero), Status = MeetingStatus.Failed }
+    };
+    if (HubMeetingFilter.Apply(weekMeetings, "This week", monday.AddDays(3)).Count() != 1)
+        failures.Add("hub filter should keep only this week's meetings");
+    if (HubMeetingFilter.Apply(weekMeetings, "Open actions", monday.AddDays(3)).Count() != 1)
+        failures.Add("hub filter should keep meetings with open actions");
+    if (HubMeetingFilter.Apply(weekMeetings, "Failed", monday.AddDays(3)).Count() != 1)
+        failures.Add("hub filter should keep failed meetings");
+
+    var protectedPath = Path.Combine(smokeRoot, "protected-meetings.json");
+    await ProtectedWorkspaceStore.WriteAsync(protectedPath, "[{\"title\":\"Protected\"}]");
+    var protectedJson = await ProtectedWorkspaceStore.ReadAsync(protectedPath);
+    if (!protectedJson.Contains("Protected")) failures.Add("workspace store should round-trip meeting JSON");
 
     var progressValues = new List<ProcessingProgress>();
     Console.WriteLine("processing...");
@@ -34,7 +115,17 @@ try
         Duration = TimeSpan.FromSeconds(2),
         Configuration = new AudioConfiguration()
     };
-    var processed = await services.IntelligenceService.ProcessAsync(
+    try
+    {
+        await services.IntelligenceService.ProcessAsync(recording, new Progress<ProcessingProgress>(_ => { }));
+        failures.Add("OpenAI processing without a key should refuse instead of inventing a transcript");
+    }
+    catch (OpenAiServiceException exception) when (exception.Message.Contains("OpenAI API key", StringComparison.OrdinalIgnoreCase))
+    {
+        // Expected honest gate.
+    }
+
+    var processed = await services.DemoIntelligence.ProcessAsync(
         recording,
         new Progress<ProcessingProgress>(value => progressValues.Add(value)));
     Console.WriteLine("processing complete");
@@ -412,6 +503,14 @@ catch (Exception exception)
 finally
 {
     services.Dispose();
+    AppPaths.Reset();
+    try
+    {
+        if (Directory.Exists(smokeRoot)) Directory.Delete(smokeRoot, recursive: true);
+    }
+    catch (IOException)
+    {
+    }
 }
 
 if (failures.Count > 0)
