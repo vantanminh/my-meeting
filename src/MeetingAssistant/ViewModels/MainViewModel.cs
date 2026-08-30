@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Net.Http;
 using System.Windows;
 using System.Windows.Input;
@@ -17,26 +18,44 @@ public enum WorkspaceView
     Processing,
     Detail,
     Speakers,
+    Actions,
     Settings
 }
 
 public sealed class SpeakerEditorViewModel : ViewModelBase
 {
     private string _name;
+    private string _role;
+    private string _accentColor;
+    private int _meetings;
 
     public SpeakerEditorViewModel(SpeakerProfile profile)
     {
         Id = profile.Id;
         _name = profile.Name;
-        Role = profile.Role;
-        AccentColor = profile.AccentColor;
-        Meetings = profile.Meetings;
+        _role = profile.Role;
+        _accentColor = profile.AccentColor;
+        _meetings = profile.Meetings;
     }
 
     public string Id { get; }
-    public string Role { get; }
-    public string AccentColor { get; }
-    public int Meetings { get; }
+    public int Meetings
+    {
+        get => _meetings;
+        set => SetProperty(ref _meetings, value);
+    }
+
+    public string Role
+    {
+        get => _role;
+        set => SetProperty(ref _role, value);
+    }
+
+    public string AccentColor
+    {
+        get => _accentColor;
+        set => SetProperty(ref _accentColor, value);
+    }
 
     public string Name
     {
@@ -45,7 +64,7 @@ public sealed class SpeakerEditorViewModel : ViewModelBase
     }
 }
 
-public sealed class MainViewModel : ViewModelBase
+public sealed partial class MainViewModel : ViewModelBase
 {
     private readonly AppServices _services;
     private readonly IAuthService _auth;
@@ -137,6 +156,9 @@ public sealed class MainViewModel : ViewModelBase
         _openAi = services.OpenAiConfiguration;
         _openAiIntelligence = services.OpenAiIntelligence;
         _updates = services.UpdateService;
+        _devices = services.AudioDevices;
+        _startup = services.Startup;
+        _outbox = services.Outbox;
         _updateStatus = _updates.Configuration.IsConfigured
             ? "Updates are ready to check."
             : "Updates are not configured for this build.";
@@ -162,8 +184,8 @@ public sealed class MainViewModel : ViewModelBase
 
         Meetings = [];
         VisibleMeetings = [];
-        MicrophoneOptions = ["Default microphone", "Headset microphone", "USB studio microphone"];
-        SystemAudioOptions = ["Default system audio", "All system audio", "Meeting app audio only"];
+        MicrophoneOptions = ["Default microphone"];
+        SystemAudioOptions = ["Default system audio"];
         QualityOptions = ["Balanced · 48 kHz", "High quality · 48 kHz", "Compact · 16 kHz"];
         RetentionOptions = ["Keep recordings for 7 days", "Keep recordings for 30 days", "Keep recordings until deleted"];
         ThemeOptions = [nameof(ThemeMode.Dark), nameof(ThemeMode.Light)];
@@ -198,6 +220,7 @@ public sealed class MainViewModel : ViewModelBase
         TestOpenAiCommand = new AsyncRelayCommand(TestOpenAiAsync, () => !IsTestingOpenAi && !IsSavingSettings);
         CheckForUpdatesCommand = new AsyncRelayCommand(CheckForUpdatesAsync, () => !IsCheckingForUpdates && !IsInstallingUpdate);
         InstallUpdateCommand = new AsyncRelayCommand(InstallUpdateAsync, () => HasAvailableUpdate && CanInstallUpdateNow && !IsCheckingForUpdates && !IsInstallingUpdate);
+        BindWorkspaceAfterConstruction();
     }
 
     public ObservableCollection<Meeting> Meetings { get; }
@@ -249,6 +272,7 @@ public sealed class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(PageDescription));
             OnPropertyChanged(nameof(MeetingsNavState));
             OnPropertyChanged(nameof(SpeakersNavState));
+            OnPropertyChanged(nameof(ActionsNavState));
             OnPropertyChanged(nameof(SettingsNavState));
             OnPropertyChanged(nameof(IsRecordingSurface));
         }
@@ -353,6 +377,8 @@ public sealed class MainViewModel : ViewModelBase
             StopRecordingCommand.RaiseCanExecuteChanged();
             StartRecordingCommand.RaiseCanExecuteChanged();
             OnPropertyChanged(nameof(RecordingIndicatorLabel));
+            OnPropertyChanged(nameof(ShowPauseButton));
+            OnPropertyChanged(nameof(ShowResumeButton));
             RefreshUpdateAvailability();
         }
     }
@@ -365,6 +391,8 @@ public sealed class MainViewModel : ViewModelBase
             PauseRecordingCommand.RaiseCanExecuteChanged();
             ResumeRecordingCommand.RaiseCanExecuteChanged();
             OnPropertyChanged(nameof(RecordingIndicatorLabel));
+            OnPropertyChanged(nameof(ShowPauseButton));
+            OnPropertyChanged(nameof(ShowResumeButton));
         }
     }
     public bool IsStopping
@@ -457,7 +485,7 @@ public sealed class MainViewModel : ViewModelBase
     public string OpenAiSummaryModel { get => _openAiSummaryModel; set => SetProperty(ref _openAiSummaryModel, value); }
     public string OpenAiKeyStatus => _openAi.IsConfigured
         ? $"{LocalizationService.Translate("Configured")} · {_openAi.ApiKeySource}"
-        : LocalizationService.Translate("Not configured · local demo will be used");
+        : LocalizationService.Translate("Not configured · processing waits for a key");
     public string OpenAiConnectionStatus { get => LocalizationService.Translate(_openAiConnectionStatus); private set => SetProperty(ref _openAiConnectionStatus, value); }
     public string OpenAiProviderLabel => LocalizationService.Translate(_intelligence.ProviderLabel);
     public bool IsTestingOpenAi
@@ -557,10 +585,9 @@ public sealed class MainViewModel : ViewModelBase
     }
     public bool HasToast => !string.IsNullOrWhiteSpace(ToastMessage);
 
-    public int MeetingCount => Meetings.Count;
-    public int TodayCount => Meetings.Count(m => m.StartedAt.LocalDateTime.Date == DateTime.Today);
-    public int ActionCount => Meetings.Sum(m => m.Summary?.ActionItems?.Count ?? 0);
-    public string LastSyncLabel => LocalizationService.Translate(SyncPaused ? "Sync paused" : "Just now · local cache");
+    public int MeetingCount => Meetings.Count(meeting => !meeting.IsArchived);
+    public int TodayCount => Meetings.Count(m => !m.IsArchived && m.StartedAt.LocalDateTime.Date == DateTime.Today);
+    public int ActionCount => OpenActionCount;
     public string PageTitle => LocalizationService.Translate(CurrentView switch
     {
         WorkspaceView.Dashboard => "Meetings",
@@ -569,6 +596,7 @@ public sealed class MainViewModel : ViewModelBase
         WorkspaceView.Processing => "Processing your meeting",
         WorkspaceView.Detail => CurrentMeetingTitle,
         WorkspaceView.Speakers => "Speaker profiles",
+        WorkspaceView.Actions => "Next steps",
         WorkspaceView.Settings => "Settings",
         _ => "Meeting Assistant"
     });
@@ -580,23 +608,20 @@ public sealed class MainViewModel : ViewModelBase
         WorkspaceView.Processing => "Turning conversation into something you can use.",
         WorkspaceView.Detail => "Review the signal, correct the record, and share the next steps.",
         WorkspaceView.Speakers => "Keep names and voices consistent across your meetings.",
+        WorkspaceView.Actions => "Open action items across every meeting in this workspace.",
         WorkspaceView.Settings => "Tune capture, privacy, and your workspace preferences.",
         _ => ""
     });
     public string MeetingsNavState => CurrentView is WorkspaceView.Dashboard or WorkspaceView.Setup or WorkspaceView.Recording or WorkspaceView.Processing or WorkspaceView.Detail ? "Selected" : "";
     public string SpeakersNavState => CurrentView == WorkspaceView.Speakers ? "Selected" : "";
+    public string ActionsNavState => CurrentView == WorkspaceView.Actions ? "Selected" : "";
     public string SettingsNavState => CurrentView == WorkspaceView.Settings ? "Selected" : "";
 
     public async Task InitializeAsync()
     {
         var session = await _auth.RestoreAsync();
         if (session is null) return;
-        CurrentUser = session;
-        IsAuthenticated = true;
-        CurrentView = WorkspaceView.Dashboard;
-        await LoadMeetingsAsync();
-        StartUpdateMonitoring();
-        _ = CheckForUpdatesAsync(silent: true);
+        await EnterWorkspaceAsync(session, showToast: false);
     }
 
     public void RefreshSystemStatus()
@@ -614,7 +639,8 @@ public sealed class MainViewModel : ViewModelBase
             nameof(CurrentMeetingTitle), nameof(ProcessingStage), nameof(ProcessingMessage), nameof(SettingsSyncDescription),
             nameof(HotkeyStatus), nameof(ToastMessage), nameof(LastSyncLabel), nameof(PageTitle), nameof(PageDescription),
             nameof(OpenAiKeyStatus), nameof(OpenAiConnectionStatus), nameof(OpenAiProviderLabel), nameof(UpdateChannelLabel),
-            nameof(UpdateStatus), nameof(UpdateStageLabel), nameof(UpdateProgressDetail), nameof(UpdateVersionDescription)
+            nameof(UpdateStatus), nameof(UpdateStageLabel), nameof(UpdateProgressDetail), nameof(UpdateVersionDescription),
+            nameof(GreetingPrefix), nameof(PlaybackStatus), nameof(LastSyncLabel)
         })
         {
             OnPropertyChanged(propertyName);
@@ -645,6 +671,15 @@ public sealed class MainViewModel : ViewModelBase
     {
         AuthError = string.Empty;
         AuthInfo = string.Empty;
+        var validation = IsSignUpMode
+            ? AuthValidation.ValidateSignUp(DisplayName, Email, Password)
+            : AuthValidation.ValidateSignIn(Email, Password);
+        if (validation is not null)
+        {
+            AuthError = validation;
+            return;
+        }
+
         IsAuthenticating = true;
         var result = IsSignUpMode
             ? await _auth.SignUpAsync(DisplayName, Email, Password)
@@ -676,23 +711,34 @@ public sealed class MainViewModel : ViewModelBase
         await EnterWorkspaceAsync(result.Session);
     }
 
-    private async Task EnterWorkspaceAsync(UserSession session)
+    private async Task EnterWorkspaceAsync(UserSession session, bool showToast = true)
     {
         CurrentUser = session;
         IsAuthenticated = true;
+        ApplyWorkspace(session);
         CurrentView = WorkspaceView.Dashboard;
         await LoadMeetingsAsync();
+        await FlushOutboxAsync();
         StartUpdateMonitoring();
-        _ = CheckForUpdatesAsync(silent: true);
-        ToastMessage = session.IsOffline ? "Offline workspace ready · your meetings are stored locally" : "Workspace ready · your session is secure";
+        if (Enum.TryParse<UpdatePolicy>(SelectedUpdatePolicy, out var policy) && policy != UpdatePolicy.Off)
+            _ = CheckForUpdatesAsync(silent: true);
+        if (showToast)
+            ShowTimedToast(session.IsOffline ? "Offline workspace ready · your meetings are stored locally" : "Workspace ready · your session is secure");
+        if (!_savedPreferences.OnboardingCompleted)
+            IsOnboardingVisible = true;
     }
 
     private async Task SignOutAsync()
     {
+        if (IsRecording && !_prompt.Confirm("Switch account", "Stop the current recording and sign out?"))
+            return;
         if (IsRecording) await StopRecordingAsync();
+        if (!_prompt.Confirm("Switch account", "Sign out of this workspace?"))
+            return;
         await _auth.SignOutAsync();
         _updateCheckTimer.Stop();
         _updateCheckCancellation?.Cancel();
+        ClearWorkspace();
         CurrentUser = null;
         IsAuthenticated = false;
         CurrentView = WorkspaceView.Auth;
@@ -764,10 +810,16 @@ public sealed class MainViewModel : ViewModelBase
     private void RefreshVisibleMeetings()
     {
         var query = SearchQuery.Trim();
-        var results = Meetings
+        var results = HubMeetingFilter.Apply(
+                Meetings.Where(meeting => ShowArchived || !meeting.IsArchived),
+                SelectedHubFilter,
+                DateTime.Today)
             .Where(meeting => string.IsNullOrWhiteSpace(query)
                 || meeting.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
                 || meeting.DateLabel.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || meeting.Notes?.Contains(query, StringComparison.OrdinalIgnoreCase) == true
+                || meeting.Summary.Overview.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || meeting.Summary.ActionItems.Any(item => item.Text.Contains(query, StringComparison.OrdinalIgnoreCase))
                 || meeting.Speakers.Any(speaker => speaker.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
                 || meeting.Transcript.Any(segment => segment.Text.Contains(query, StringComparison.OrdinalIgnoreCase)))
             .OrderByDescending(meeting => meeting.StartedAt)
@@ -775,23 +827,46 @@ public sealed class MainViewModel : ViewModelBase
 
         VisibleMeetings.Clear();
         foreach (var meeting in results) VisibleMeetings.Add(meeting);
+        RebuildInbox();
         OnPropertyChanged(nameof(MeetingCount));
         OnPropertyChanged(nameof(TodayCount));
         OnPropertyChanged(nameof(ActionCount));
+        OnPropertyChanged(nameof(WeekCount));
+        OnPropertyChanged(nameof(HasAnyMeetings));
+        OnPropertyChanged(nameof(HasSearchWithoutResults));
+        OnPropertyChanged(nameof(ShowEmptyWorkspace));
         OnPropertyChanged(nameof(LastSyncLabel));
+        OnPropertyChanged(nameof(RecordingBytesLabel));
     }
 
     private void Navigate(string destination)
     {
         if (!IsAuthenticated) return;
+        if (IsRecording && destination is "Meetings" or "Speakers" or "Settings" or "Actions")
+        {
+            CurrentView = destination switch
+            {
+                "Speakers" => WorkspaceView.Speakers,
+                "Settings" => WorkspaceView.Settings,
+                "Actions" => WorkspaceView.Actions,
+                _ => WorkspaceView.Dashboard
+            };
+            ShowTimedToast("Recording continues in the background");
+            if (CurrentView == WorkspaceView.Speakers) BuildSpeakerEditors();
+            if (CurrentView == WorkspaceView.Actions) RebuildInbox();
+            return;
+        }
+
         CurrentView = destination switch
         {
             "Speakers" => WorkspaceView.Speakers,
             "Settings" => WorkspaceView.Settings,
+            "Actions" => WorkspaceView.Actions,
             _ => WorkspaceView.Dashboard
         };
 
         if (CurrentView == WorkspaceView.Speakers) BuildSpeakerEditors();
+        if (CurrentView == WorkspaceView.Actions) RebuildInbox();
     }
 
     private void OpenSetup()
@@ -813,12 +888,18 @@ public sealed class MainViewModel : ViewModelBase
     private void BuildDetailState(Meeting meeting)
     {
         TranscriptFilterOptions.Clear();
+        TranscriptFilterChips.Clear();
         TranscriptFilterOptions.Add("All speakers");
+        TranscriptFilterChips.Add(new FilterChipViewModel("All speakers", isSelected: true));
         foreach (var speaker in meeting.Speakers.OrderBy(speaker => speaker.Name))
+        {
             TranscriptFilterOptions.Add(speaker.Name);
+            TranscriptFilterChips.Add(new FilterChipViewModel(speaker.Name));
+        }
         TranscriptSpeakerFilter = "All speakers";
         SetTranscriptFilter("All speakers");
         BuildSpeakerEditors(meeting);
+        BuildReviewEditors(meeting);
     }
 
     private void BuildSpeakerEditors(Meeting? meeting = null)
@@ -828,12 +909,18 @@ public sealed class MainViewModel : ViewModelBase
             .GroupBy(speaker => speaker.Id)
             .Select(group => group.First())
             .OrderBy(speaker => speaker.Name);
-        foreach (var profile in profiles) SpeakerEditors.Add(new SpeakerEditorViewModel(profile));
+        foreach (var profile in profiles)
+        {
+            profile.Meetings = SpeakerMemory.Recount(Meetings, profile.Id);
+            SpeakerEditors.Add(new SpeakerEditorViewModel(profile));
+        }
     }
 
     private void SetTranscriptFilter(string filter)
     {
         TranscriptSpeakerFilter = filter;
+        foreach (var chip in TranscriptFilterChips)
+            chip.IsSelected = string.Equals(chip.Name, filter, StringComparison.Ordinal);
         FilteredTranscript.Clear();
         if (CurrentMeeting is null) return;
         var segments = filter == "All speakers"
@@ -846,25 +933,38 @@ public sealed class MainViewModel : ViewModelBase
     {
         IsTestingDevices = true;
         DeviceTestStatus = "Listening for both audio sources…";
-        await Task.Delay(850);
-        IsTestingDevices = false;
-        DeviceTested = true;
-        DeviceTestStatus = "Both sources look good · ready to record";
-        MicrophoneLevel = 0.72;
-        SystemAudioLevel = 0.58;
+        try
+        {
+            var result = await _audio.TestAsync(CreateAudioConfiguration());
+            DeviceTested = result.Success;
+            DeviceTestStatus = result.Message;
+            MicrophoneLevel = result.MicrophoneLevel;
+            SystemAudioLevel = result.SystemAudioLevel;
+        }
+        catch (Exception)
+        {
+            DeviceTested = false;
+            DeviceTestStatus = "Could not open the selected devices. Check Windows microphone permission.";
+        }
+        finally
+        {
+            IsTestingDevices = false;
+        }
     }
 
     private async Task StartRecordingAsync()
     {
         if (IsRecording) return;
-        var configuration = new AudioConfiguration
+        Directory.CreateDirectory(AppPaths.RecordingsDirectory);
+        var warning = DiskBudget.WarningFor(DiskBudget.AvailableBytes(AppPaths.RecordingsDirectory), null);
+        if (warning is not null && warning.Contains("not enough", StringComparison.OrdinalIgnoreCase))
         {
-            Title = string.IsNullOrWhiteSpace(RecordingTitle) ? "Untitled meeting" : RecordingTitle.Trim(),
-            Microphone = SelectedMicrophone,
-            SystemAudio = SelectedSystemAudio,
-            Quality = SelectedQuality,
-            KeepLocalCopy = KeepLocalCopy
-        };
+            ShowTimedToast(warning);
+            return;
+        }
+        if (warning is not null) ShowTimedToast(warning);
+
+        var configuration = CreateAudioConfiguration();
 
         await _audio.StartAsync(configuration);
         OnPropertyChanged(nameof(CaptureProvider));
@@ -875,6 +975,7 @@ public sealed class MainViewModel : ViewModelBase
         MicrophoneLevel = 0.12;
         SystemAudioLevel = 0.08;
         IsPaused = false;
+        ResetDurationWarning();
         IsRecording = true;
         CurrentView = WorkspaceView.Recording;
         _recordingTimer.Start();
@@ -941,10 +1042,25 @@ public sealed class MainViewModel : ViewModelBase
                 ProcessingStageIndex = value.StageIndex;
                 ProcessingStage = value.Stage;
                 ProcessingMessage = value.Message;
+                UpdateProcessingSteps(value.StageIndex);
             });
+            ResetProcessingSteps();
             var result = await _intelligence.ProcessAsync(_lastRecording, progress, cancellationToken);
+            result.Meeting.OwnerUserId = CurrentUser?.UserId;
+            result.Meeting.MicrophonePath = _lastRecording.MicrophonePath;
+            result.Meeting.SystemAudioPath = _lastRecording.SystemAudioPath;
+            result.Meeting.SessionDirectory = _lastRecording.SessionDirectory;
+            if (!KeepLocalCopy)
+                RecordingSafety.DeleteSessionAudio(_lastRecording);
             var sync = await _cloud.SyncAsync(result.Meeting, cancellationToken);
             result.Meeting.SyncStatus = sync.Label;
+            result.Meeting.SyncState = sync.Success && sync.Label.Contains("Firebase", StringComparison.OrdinalIgnoreCase)
+                ? SyncState.Synced
+                : SyncState.Pending;
+            if (result.Meeting.SyncState == SyncState.Synced)
+                result.Meeting.LastSyncedAt = DateTimeOffset.Now;
+            else
+                await _outbox.EnqueueAsync(result.Meeting.Id);
             Meetings.Insert(0, result.Meeting);
             await _repository.SaveAsync(Meetings);
             RefreshVisibleMeetings();
@@ -952,7 +1068,7 @@ public sealed class MainViewModel : ViewModelBase
             BuildDetailState(result.Meeting);
             IsProcessing = false;
             CurrentView = WorkspaceView.Detail;
-            ToastMessage = "Meeting ready · transcript and summary are saved locally";
+            ShowTimedToast("Meeting ready · transcript and summary are saved locally");
         }
         catch (OperationCanceledException)
         {
@@ -989,6 +1105,7 @@ public sealed class MainViewModel : ViewModelBase
         if (!IsRecording) return;
         var elapsed = _audio.Elapsed;
         ElapsedLabel = elapsed.ToString(elapsed.TotalHours >= 1 ? @"h\:mm\:ss" : @"mm\:ss");
+        WarnIfLongRecording(elapsed);
         _services.TrayService.SetRecordingState(true, elapsed);
     }
 
@@ -1011,12 +1128,20 @@ public sealed class MainViewModel : ViewModelBase
     private async Task SaveMeetingAsync()
     {
         if (CurrentMeeting is null) return;
+        ApplyReviewEditors(CurrentMeeting);
         CurrentMeeting.UpdatedAt = DateTimeOffset.Now;
         var sync = await _cloud.SyncAsync(CurrentMeeting);
         CurrentMeeting.SyncStatus = sync.Label;
+        CurrentMeeting.SyncState = sync.Success && sync.Label.Contains("Firebase", StringComparison.OrdinalIgnoreCase)
+            ? SyncState.Synced
+            : SyncState.Pending;
+        if (CurrentMeeting.SyncState == SyncState.Synced)
+            CurrentMeeting.LastSyncedAt = DateTimeOffset.Now;
+        else
+            await _outbox.EnqueueAsync(CurrentMeeting.Id);
         await _repository.SaveAsync(Meetings);
         RefreshVisibleMeetings();
-        ToastMessage = sync.Success ? "Meeting changes saved to your local workspace" : "Meeting changes saved locally; cloud sync will retry";
+        ShowTimedToast(sync.Success ? "Meeting changes saved to your local workspace" : "Meeting changes saved locally; cloud sync will retry");
     }
 
     private async Task SaveSpeakerAsync()
@@ -1028,6 +1153,8 @@ public sealed class MainViewModel : ViewModelBase
             foreach (var profile in profiles)
             {
                 profile.Name = string.IsNullOrWhiteSpace(editor.Name) ? "Unknown speaker" : editor.Name.Trim();
+                profile.Role = string.IsNullOrWhiteSpace(editor.Role) ? "Participant" : editor.Role.Trim();
+                profile.AccentColor = string.IsNullOrWhiteSpace(editor.AccentColor) ? "#88A9FF" : editor.AccentColor.Trim();
                 foreach (var segment in Meetings.SelectMany(meeting => meeting.Transcript).Where(segment => segment.SpeakerId == profile.Id))
                     segment.SpeakerName = profile.Name;
             }
@@ -1067,12 +1194,21 @@ public sealed class MainViewModel : ViewModelBase
             _savedPreferences.StartOnLogin = StartOnLogin;
             _savedPreferences.TranscriptionModel = OpenAiTranscriptionModel;
             _savedPreferences.SummaryModel = OpenAiSummaryModel;
+            _savedPreferences.TranscriptionLanguage = TranscriptionLanguage;
+            _savedPreferences.UpdatePolicy = Enum.TryParse<UpdatePolicy>(SelectedUpdatePolicy, out var policy) ? policy : UpdatePolicy.Ask;
+            _savedPreferences.MicrophoneId = CreateAudioConfiguration().MicrophoneId ?? "default";
+            _savedPreferences.SystemAudioId = CreateAudioConfiguration().SystemAudioId ?? "default";
+            _savedPreferences.Quality = SelectedQuality;
+            _savedPreferences.MinimizeToTrayOnClose = MinimizeToTrayOnClose;
             await _preferences.SaveAsync(_savedPreferences);
+            _startup.SetEnabled(StartOnLogin);
+            RetentionPolicy.Sweep(AppPaths.RecordingsDirectory, RetentionPolicy.RetentionFor(RetentionOption), DateTimeOffset.Now);
+            OnPropertyChanged(nameof(RecordingBytesLabel));
             OnPropertyChanged(nameof(HotkeyStatus));
             OnPropertyChanged(nameof(SettingsSyncDescription));
             OnPropertyChanged(nameof(OpenAiKeyStatus));
             OnPropertyChanged(nameof(OpenAiProviderLabel));
-            ToastMessage = "Settings saved · your preferences apply to the next recording";
+            ShowTimedToast("Settings saved · your preferences apply to the next recording");
         }
         catch (TimeoutException)
         {
@@ -1131,6 +1267,8 @@ public sealed class MainViewModel : ViewModelBase
         InstallUpdateCommand.RaiseCanExecuteChanged();
         if (!IsAuthenticated || !CanInstallUpdateNow || _availableUpdate is null || IsCheckingForUpdates || IsInstallingUpdate)
             return;
+        if (!string.Equals(SelectedUpdatePolicy, nameof(UpdatePolicy.Automatic), StringComparison.OrdinalIgnoreCase))
+            return;
 
         _ = InstallUpdateAsync(_availableUpdate);
     }
@@ -1163,6 +1301,11 @@ public sealed class MainViewModel : ViewModelBase
     private async Task CheckForUpdatesAsync(bool silent)
     {
         if (!IsAuthenticated || IsCheckingForUpdates || IsInstallingUpdate) return;
+        if (string.Equals(SelectedUpdatePolicy, nameof(UpdatePolicy.Off), StringComparison.OrdinalIgnoreCase))
+        {
+            UpdateStatus = "Automatic updates are turned off.";
+            return;
+        }
 
         IsCheckingForUpdates = true;
         if (!silent) UpdateStatus = "Checking for updates...";
@@ -1182,10 +1325,13 @@ public sealed class MainViewModel : ViewModelBase
 
             if (result.Status == UpdateCheckStatus.UpdateAvailable && result.Update is not null)
             {
-                if (CanInstallUpdateNow)
+                var automatic = string.Equals(SelectedUpdatePolicy, nameof(UpdatePolicy.Automatic), StringComparison.OrdinalIgnoreCase);
+                if (automatic && CanInstallUpdateNow)
                     updateToInstall = result.Update;
-                else
+                else if (automatic)
                     UpdateStatus = "An update will install automatically when your meeting is finished.";
+                else
+                    UpdateStatus = $"{LocalizationService.Translate("Update available")}: v{result.Update.Version}";
             }
 
             InstallUpdateCommand.RaiseCanExecuteChanged();
@@ -1281,6 +1427,7 @@ public sealed class MainViewModel : ViewModelBase
     {
         _recordingTimer.Stop();
         _updateCheckTimer.Stop();
+        _toastTimer.Stop();
         _audio.LevelsChanged -= OnAudioLevelsChanged;
         _hotkey.ToggleRecordingRequested -= OnGlobalHotkeyRequested;
         _processingCancellation?.Cancel();
@@ -1290,5 +1437,6 @@ public sealed class MainViewModel : ViewModelBase
         _updateCancellation?.Cancel();
         _updateCancellation?.Dispose();
         LocalizationService.LanguageChanged -= OnLanguageChanged;
+        DisposePlayback();
     }
 }
