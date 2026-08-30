@@ -12,6 +12,7 @@
         SourceInitialized="Window_SourceInitialized"
         SizeChanged="Window_SizeChanged"
         Closing="Window_Closing"
+        PreviewKeyDown="Window_PreviewKeyDown"
         localization:LocalizationService.IsEnabled="True">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="48" ResizeBorderThickness="7" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False" />
@@ -54,6 +55,114 @@
         <Style x:Key="SettingsSurface" TargetType="Grid" BasedOn="{StaticResource ViewSurface}">
             <Style.Triggers>
                 <DataTrigger Binding="{Binding CurrentView}" Value="Settings"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="ActionsSurface" TargetType="Grid" BasedOn="{StaticResource ViewSurface}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding CurrentView}" Value="Actions"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="PauseOnly" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding ShowPauseButton}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="ResumeOnly" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding ShowResumeButton}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="RecordingChip" TargetType="Border">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsRecording}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="OnboardingSurface" TargetType="Border">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsOnboardingVisible}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="FilterChip" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="Margin" Value="0,0,6,5" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource MintDimBrush}" />
+                    <Setter Property="Foreground" Value="{StaticResource MintBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="EmptySearchSurface" TargetType="Border">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasSearchWithoutResults}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="EmptyWorkspaceSurface" TargetType="Border">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding ShowEmptyWorkspace}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="PasswordVisibleSurface" TargetType="TextBox">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsPasswordVisible}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="PasswordHiddenSurface" TargetType="PasswordBox">
+            <Setter Property="Visibility" Value="Visible" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsPasswordVisible}" Value="True">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="AccountSettingsSurface" TargetType="Border" BasedOn="{StaticResource CardStyle}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding ShowAccountSettings}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="CaptureSettingsSurface" TargetType="Border" BasedOn="{StaticResource CardStyle}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding ShowCaptureSettings}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="AiSettingsSurface" TargetType="Border" BasedOn="{StaticResource CardStyle}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding ShowAiSettings}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="PrivacySettingsSurface" TargetType="Border" BasedOn="{StaticResource CardStyle}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding ShowPrivacySettings}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="UpdateSettingsSurface" TargetType="Border" BasedOn="{StaticResource CardStyle}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding ShowUpdateSettings}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="ShortcutSettingsSurface" TargetType="Border" BasedOn="{StaticResource CardStyle}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding ShowShortcutSettings}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
             </Style.Triggers>
         </Style>
 
@@ -238,9 +347,15 @@
                         <TextBlock Text="Email address" Style="{StaticResource SectionLabel}" Margin="0,0,0,7" />
                         <TextBox Text="{Binding Email, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,17" />
                         <TextBlock Text="Password" Style="{StaticResource SectionLabel}" Margin="0,0,0,7" />
-                        <PasswordBox PasswordChanged="PasswordBox_PasswordChanged" Margin="0,0,0,7" />
+                        <Grid Margin="0,0,0,7">
+                            <PasswordBox Style="{StaticResource PasswordHiddenSurface}" PasswordChanged="PasswordBox_PasswordChanged" />
+                            <TextBox Style="{StaticResource PasswordVisibleSurface}" Text="{Binding Password, UpdateSourceTrigger=PropertyChanged}" />
+                        </Grid>
                         <Grid Margin="0,0,0,18">
-                            <TextBlock Text="At least 6 characters" FontSize="11" Foreground="{StaticResource SubtleBrush}" VerticalAlignment="Center" />
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="At least 6 characters" FontSize="11" Foreground="{StaticResource SubtleBrush}" VerticalAlignment="Center" />
+                                <Button Style="{StaticResource GhostButton}" Command="{Binding TogglePasswordVisibilityCommand}" Content="Show" FontSize="11" Margin="12,0,0,0" />
+                            </StackPanel>
                             <Button Style="{StaticResource NotSignUpButton}" Command="{Binding ForgotPasswordCommand}" AutomationProperties.Name="Forgot password" HorizontalAlignment="Right">
                                 <TextBlock Text="Forgot password?" FontSize="11" Foreground="{StaticResource BlueBrush}" />
                             </Button>
@@ -310,6 +425,12 @@
                                 <TextBlock x:Name="SpeakersNavLabel" Text="Speakers" VerticalAlignment="Center" />
                             </StackPanel>
                         </Button>
+                        <Button x:Name="ActionsNavButton" ToolTip="Next steps" AutomationProperties.Name="Next steps" Style="{StaticResource NavButton}" Tag="{Binding ActionsNavState}" Command="{Binding NavigateCommand}" CommandParameter="Actions">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="✓" Width="28" FontSize="16" Foreground="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" />
+                                <TextBlock x:Name="ActionsNavLabel" Text="Next steps" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
                         <Button x:Name="SettingsNavButton" ToolTip="Settings" AutomationProperties.Name="Settings" Style="{StaticResource NavButton}" Tag="{Binding SettingsNavState}" Command="{Binding NavigateCommand}" CommandParameter="Settings">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="⚙" Width="28" FontSize="16" Foreground="{Binding RelativeSource={RelativeSource AncestorType=Button}, Path=Foreground}" />
@@ -369,6 +490,13 @@
                             <TextBlock x:Name="HeaderDescription" Text="{Binding PageDescription}" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,0" TextTrimming="CharacterEllipsis" />
                         </StackPanel>
                         <StackPanel x:Name="HeaderActions" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Border Style="{StaticResource RecordingChip}" Background="{StaticResource CoralDimBrush}" CornerRadius="14" Padding="10,6" Margin="0,0,12,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <Ellipse Width="7" Height="7" Fill="{StaticResource CoralBrush}" VerticalAlignment="Center" Margin="0,0,7,0" />
+                                    <TextBlock Text="REC" FontSize="10" FontWeight="Bold" Foreground="{StaticResource CoralBrush}" />
+                                    <TextBlock Text="{Binding ElapsedLabel}" FontSize="10" Foreground="{StaticResource CoralBrush}" Margin="6,0,0,0" />
+                                </StackPanel>
+                            </Border>
                             <Grid x:Name="SearchContainer" Style="{StaticResource DashboardOnly}" Margin="0,0,14,0">
                                 <Border x:Name="SearchBorder" Background="{StaticResource SearchBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="9" Width="220" Height="38">
                                     <Grid>
@@ -411,7 +539,7 @@
                                 <Grid x:Name="DashboardWelcome" Margin="0,0,0,25">
                                     <StackPanel>
                                         <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="Good morning, " FontSize="29" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding GreetingPrefix}" FontSize="29" FontWeight="SemiBold" />
                                             <TextBlock Text="{Binding UserFirstName}" FontSize="29" FontWeight="SemiBold" />
                                             <TextBlock Text="." FontSize="29" FontWeight="SemiBold" />
                                         </StackPanel>
@@ -483,22 +611,33 @@
                                     <Border x:Name="TodayStatCard" Grid.Column="1" Style="{StaticResource CardStyle}" Margin="8,0" Padding="17">
                                         <StackPanel>
                                             <TextBlock Text="THIS WEEK" Style="{StaticResource SectionLabel}" />
-                                            <TextBlock Text="{Binding TodayCount}" FontSize="27" FontWeight="SemiBold" Margin="0,7,0,0" />
-                                            <TextBlock Text="recorded today" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                                            <TextBlock Text="{Binding WeekCount}" FontSize="27" FontWeight="SemiBold" Margin="0,7,0,0" />
+                                            <TextBlock Text="recorded this week" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
                                         </StackPanel>
                                     </Border>
                                     <Border x:Name="ActionStatCard" Grid.Column="2" Style="{StaticResource CardStyle}" Margin="8,0,0,0" Padding="17">
                                         <StackPanel>
                                             <TextBlock Text="ACTION ITEMS" Style="{StaticResource SectionLabel}" />
-                                            <TextBlock Text="{Binding ActionCount}" FontSize="27" FontWeight="SemiBold" Margin="0,7,0,0" />
-                                            <TextBlock Text="ready to move forward" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                                            <TextBlock Text="{Binding OpenActionCount}" FontSize="27" FontWeight="SemiBold" Margin="0,7,0,0" />
+                                            <TextBlock Text="still open" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
                                         </StackPanel>
                                     </Border>
                                 </Grid>
 
                                 <Grid Margin="0,0,0,13">
                                     <TextBlock Text="Recent meetings" FontSize="18" FontWeight="SemiBold" />
-                                    <TextBlock Text="{Binding VisibleMeetings.Count, StringFormat={}{0} conversations}" HorizontalAlignment="Right" FontSize="11" Foreground="{StaticResource SubtleBrush}" VerticalAlignment="Center" />
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <ItemsControl ItemsSource="{Binding HubFilterOptions}">
+                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Style="{StaticResource FilterChip}" Command="{Binding DataContext.SetHubFilterCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" Content="{Binding}" />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <CheckBox Content="Show archived" IsChecked="{Binding ShowArchived}" Margin="10,0,12,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding VisibleMeetings.Count, StringFormat={}{0} conversations}" FontSize="11" Foreground="{StaticResource SubtleBrush}" VerticalAlignment="Center" />
+                                    </StackPanel>
                                 </Grid>
                                 <Border Style="{StaticResource LoadingMeetingsSurface}" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="14" Padding="26" Margin="0,0,0,9">
                                     <StackPanel HorizontalAlignment="Center">
@@ -528,6 +667,8 @@
                                                                 <TextBlock Text="  ·  " FontSize="11" Foreground="{StaticResource SubtleBrush}" />
                                                                 <TextBlock Text="{Binding DurationLabel}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
                                                                 <TextBlock Text="  ·  " FontSize="11" Foreground="{StaticResource SubtleBrush}" />
+                                                                <TextBlock Text="{Binding StatusLabel}" FontSize="11" Foreground="{StaticResource BlueBrush}" />
+                                                                <TextBlock Text="  ·  " FontSize="11" Foreground="{StaticResource SubtleBrush}" />
                                                                 <TextBlock Text="{Binding ParticipantCount, StringFormat={}{0} speakers}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
                                                             </StackPanel>
                                                         </StackPanel>
@@ -541,10 +682,16 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-                                <Border Style="{StaticResource EmptyMeetingsSurface}" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="14" Padding="26" Margin="0,3,0,0">
+                                <Border Style="{StaticResource EmptyWorkspaceSurface}" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="14" Padding="26" Margin="0,3,0,0">
+                                    <StackPanel HorizontalAlignment="Center">
+                                        <TextBlock Text="No meetings yet" FontSize="14" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                        <TextBlock Text="Start a recording. This workspace stays empty until you capture a meeting." FontSize="11" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" Margin="0,7,0,0" TextAlignment="Center" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource EmptySearchSurface}" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="14" Padding="26" Margin="0,3,0,0">
                                     <StackPanel HorizontalAlignment="Center">
                                         <TextBlock Text="No meetings match that search" FontSize="14" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                                        <TextBlock Text="Try a title, speaker name, date, or phrase from the transcript." FontSize="11" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" Margin="0,7,0,0" />
+                                        <TextBlock Text="Try a title, speaker name, date, or phrase from the transcript." FontSize="11" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" Margin="0,7,0,0" TextAlignment="Center" />
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
@@ -580,9 +727,9 @@
                                     <StackPanel>
                                         <TextBlock Text="AUDIO SOURCES" Style="{StaticResource SectionLabel}" />
                                         <TextBlock Text="Microphone input" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,17,0,7" />
-                                        <ComboBox ItemsSource="{Binding MicrophoneOptions}" SelectedItem="{Binding SelectedMicrophone}" />
+                                        <ComboBox ItemsSource="{Binding MicrophoneDevices}" DisplayMemberPath="Name" SelectedValuePath="Name" SelectedValue="{Binding SelectedMicrophone}" />
                                         <TextBlock Text="System audio" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,16,0,7" />
-                                        <ComboBox ItemsSource="{Binding SystemAudioOptions}" SelectedItem="{Binding SelectedSystemAudio}" />
+                                        <ComboBox ItemsSource="{Binding SystemAudioDevices}" DisplayMemberPath="Name" SelectedValuePath="Name" SelectedValue="{Binding SelectedSystemAudio}" />
                                         <TextBlock Text="Capture quality" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,16,0,7" />
                                         <ComboBox ItemsSource="{Binding QualityOptions}" SelectedItem="{Binding SelectedQuality}" />
                                         <Button Style="{StaticResource SecondaryButton}" Command="{Binding TestDevicesCommand}" Margin="0,19,0,0" Height="39">
@@ -704,10 +851,10 @@
                                     </Grid>
                                 </Border>
                                 <StackPanel x:Name="RecordingActions" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,30,0,0">
-                                    <Button x:Name="PauseRecordingButton" Style="{StaticResource SecondaryButton}" Command="{Binding PauseRecordingCommand}" Height="44" Width="132" Margin="0,0,8,0">
+                                    <Button x:Name="PauseRecordingButton" Style="{StaticResource PauseOnly}" Command="{Binding PauseRecordingCommand}" Height="44" Width="132" Margin="0,0,8,0">
                                         <StackPanel Orientation="Horizontal"><TextBlock Text="Ⅱ" FontSize="15" Margin="0,0,8,0" /><TextBlock Text="Pause" /></StackPanel>
                                     </Button>
-                                    <Button x:Name="ResumeRecordingButton" Style="{StaticResource SecondaryButton}" Command="{Binding ResumeRecordingCommand}" Height="44" Width="132" Margin="8,0,8,0">
+                                    <Button x:Name="ResumeRecordingButton" Style="{StaticResource ResumeOnly}" Command="{Binding ResumeRecordingCommand}" Height="44" Width="132" Margin="8,0,8,0">
                                         <StackPanel Orientation="Horizontal"><TextBlock Text="▶" FontSize="11" Margin="0,0,8,0" /><TextBlock Text="Resume" /></StackPanel>
                                     </Button>
                                     <Button x:Name="StopRecordingButton" Style="{StaticResource DangerButton}" Command="{Binding StopRecordingCommand}" Height="44" Width="132" Margin="8,0,0,0">
@@ -733,31 +880,27 @@
                                             <TextBlock Text="{Binding ProcessingPercent, StringFormat={}{0}%}" HorizontalAlignment="Right" FontSize="13" Foreground="{StaticResource MintBrush}" />
                                         </Grid>
                                         <ProgressBar Value="{Binding ProcessingPercent, Mode=OneWay}" Maximum="100" Height="8" Margin="0,14,0,25" />
-                                        <Grid Margin="0,0,0,10">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="20" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <Ellipse Width="9" Height="9" Fill="{StaticResource MintBrush}" VerticalAlignment="Center" />
-                                            <TextBlock Grid.Column="1" Text="Audio tracks prepared" FontSize="11" Foreground="{StaticResource MutedBrush}" />
-                                        </Grid>
-                                        <Grid Margin="0,0,0,10">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="20" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <Ellipse Width="9" Height="9" Fill="{StaticResource MintBrush}" VerticalAlignment="Center" />
-                                            <TextBlock Grid.Column="1" Text="Transcript with timestamps" FontSize="11" Foreground="{StaticResource MutedBrush}" />
-                                        </Grid>
-                                        <Grid Margin="0,0,0,10">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="20" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <Ellipse Width="9" Height="9" Fill="{StaticResource MintBrush}" VerticalAlignment="Center" />
-                                            <TextBlock Grid.Column="1" Text="Speaker turns identified" FontSize="11" Foreground="{StaticResource MutedBrush}" />
-                                        </Grid>
-                                        <Grid Margin="0,0,0,10">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="20" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <Ellipse Width="9" Height="9" Fill="{StaticResource MintBrush}" VerticalAlignment="Center" />
-                                            <TextBlock Grid.Column="1" Text="Summary and action items" FontSize="11" Foreground="{StaticResource MutedBrush}" />
-                                        </Grid>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="20" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <Ellipse Width="9" Height="9" Fill="{StaticResource MintBrush}" VerticalAlignment="Center" />
-                                            <TextBlock Grid.Column="1" Text="Saved to your local workspace" FontSize="11" Foreground="{StaticResource MutedBrush}" />
-                                        </Grid>
+                                        <ItemsControl ItemsSource="{Binding ProcessingSteps}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,0,0,10">
+                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="20" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                        <Ellipse Width="9" Height="9" VerticalAlignment="Center">
+                                                            <Ellipse.Style>
+                                                                <Style TargetType="Ellipse">
+                                                                    <Setter Property="Fill" Value="{StaticResource SubtleBrush}" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding State}" Value="Done"><Setter Property="Fill" Value="{StaticResource MintBrush}" /></DataTrigger>
+                                                                        <DataTrigger Binding="{Binding State}" Value="Current"><Setter Property="Fill" Value="{StaticResource GoldBrush}" /></DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Ellipse.Style>
+                                                        </Ellipse>
+                                                        <TextBlock Grid.Column="1" Text="{Binding Label, Converter={StaticResource LocalizedTextConverter}}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
                                     </StackPanel>
                                 </Border>
                                 <Grid Style="{StaticResource ProcessingErrorSurface}">
@@ -782,9 +925,14 @@
                                     <Button Style="{StaticResource GhostButton}" Command="{Binding BackToMeetingsCommand}" HorizontalAlignment="Left" Padding="0,4">
                                         <TextBlock Text="←  All meetings" FontSize="12" Foreground="{StaticResource BlueBrush}" />
                                     </Button>
-                                    <Button Style="{StaticResource SecondaryButton}" Command="{Binding SaveMeetingCommand}" HorizontalAlignment="Right" Padding="14,8">
-                                        <StackPanel Orientation="Horizontal"><TextBlock Text="✓" Foreground="{StaticResource MintBrush}" Margin="0,0,7,0" /><TextBlock Text="Save changes" FontSize="11" /></StackPanel>
-                                    </Button>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <Button Style="{StaticResource GhostButton}" Command="{Binding ExportMeetingCommand}" Content="Export" FontSize="11" Margin="0,0,6,0" />
+                                        <Button Style="{StaticResource GhostButton}" Command="{Binding ArchiveMeetingCommand}" Content="Archive" FontSize="11" Margin="0,0,6,0" />
+                                        <Button Style="{StaticResource GhostButton}" Command="{Binding DeleteMeetingCommand}" Content="Delete" FontSize="11" Foreground="{StaticResource CoralBrush}" Margin="0,0,6,0" />
+                                        <Button Style="{StaticResource SecondaryButton}" Command="{Binding SaveMeetingCommand}" Padding="14,8">
+                                            <StackPanel Orientation="Horizontal"><TextBlock Text="✓" Foreground="{StaticResource MintBrush}" Margin="0,0,7,0" /><TextBlock Text="Save changes" FontSize="11" /></StackPanel>
+                                        </Button>
+                                    </StackPanel>
                                 </Grid>
                                 <Border Background="{StaticResource DetailCardBrush}" BorderBrush="{StaticResource DetailCardBorderBrush}" BorderThickness="1" CornerRadius="15" Padding="23" Margin="0,0,0,20">
                                     <Grid>
@@ -819,18 +967,30 @@
                                             <TextBlock Text="Transcript" FontSize="18" FontWeight="SemiBold" />
                                             <TextBlock Text="{Binding FilteredTranscript.Count, StringFormat={}{0} speaker turns}" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="11" Foreground="{StaticResource SubtleBrush}" />
                                         </Grid>
-                                        <ItemsControl ItemsSource="{Binding TranscriptFilterOptions}" Margin="0,0,0,14">
-                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
+                                        <Grid Margin="0,0,0,14">
+                                            <ItemsControl ItemsSource="{Binding TranscriptFilterChips}">
+                                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Button Style="{StaticResource FilterChip}" Command="{Binding DataContext.SetTranscriptFilterCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding Name}" Content="{Binding Name}" />
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <Button Style="{StaticResource GhostButton}" Command="{Binding CopyTranscriptCommand}" Content="Copy visible" FontSize="10" HorizontalAlignment="Right" VerticalAlignment="Top" />
+                                        </Grid>
+                                        <ListView ItemsSource="{Binding FilteredTranscript}" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                                            <ListView.ItemContainerStyle>
+                                                <Style TargetType="ListViewItem">
+                                                    <Setter Property="Padding" Value="0" />
+                                                    <Setter Property="Margin" Value="0,0,0,9" />
+                                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                    <Setter Property="Background" Value="Transparent" />
+                                                    <Setter Property="BorderThickness" Value="0" />
+                                                </Style>
+                                            </ListView.ItemContainerStyle>
+                                            <ListView.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Button Style="{StaticResource SecondaryButton}" Command="{Binding DataContext.SetTranscriptFilterCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" Content="{Binding}" FontSize="10" Padding="10,6" Margin="0,0,6,5" />
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                        <ItemsControl ItemsSource="{Binding FilteredTranscript}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Border Style="{StaticResource CardStyle}" Padding="15" Margin="0,0,0,9">
+                                                    <Border Style="{StaticResource CardStyle}" Padding="15">
                                                         <Grid>
                                                             <Grid.ColumnDefinitions><ColumnDefinition Width="48" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                                             <Border Width="34" Height="34" CornerRadius="11" Background="{StaticResource TranscriptIconBrush}" VerticalAlignment="Top">
@@ -838,17 +998,42 @@
                                                             </Border>
                                                             <StackPanel Grid.Column="1" Width="82" Margin="0,1,12,0">
                                                                 <TextBlock Text="{Binding SpeakerName}" FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                                                <TextBlock Text="{Binding Timestamp}" FontSize="10" Foreground="{StaticResource BlueBrush}" Margin="0,5,0,0" />
+                                                                <TextBlock Text="{Binding Timestamp}" FontSize="10" Foreground="{StaticResource BlueBrush}" Margin="0,5,0,0" Cursor="Hand" MouseLeftButtonUp="TranscriptTimestamp_Click" />
+                                                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding DataContext.SplitTurnCommand, RelativeSource={RelativeSource AncestorType=ListView}}" CommandParameter="{Binding}" Content="Split" FontSize="9" Padding="4,0" />
+                                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding DataContext.MergeTurnCommand, RelativeSource={RelativeSource AncestorType=ListView}}" CommandParameter="{Binding}" Content="Merge" FontSize="9" Padding="4,0" />
+                                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding DataContext.InsertTurnCommand, RelativeSource={RelativeSource AncestorType=ListView}}" CommandParameter="{Binding}" Content="+" FontSize="9" Padding="4,0" />
+                                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding DataContext.DeleteTurnCommand, RelativeSource={RelativeSource AncestorType=ListView}}" CommandParameter="{Binding}" Content="×" FontSize="9" Padding="4,0" />
+                                                                </StackPanel>
                                                             </StackPanel>
                                                             <TextBox Grid.Column="2" Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" AcceptsReturn="True" Background="Transparent" BorderThickness="0" Padding="0" FontSize="12" Foreground="{StaticResource EditorTextBrush}" MinHeight="38" />
                                                         </Grid>
                                                     </Border>
                                                 </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
+                                            </ListView.ItemTemplate>
+                                        </ListView>
                                     </StackPanel>
                                     <StackPanel x:Name="SummaryColumn" Grid.Row="0" Grid.Column="1" Margin="10,0,0,0">
-                                        <TextBlock Text="Summary" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,12" />
+                                        <Grid Margin="0,0,0,12">
+                                            <TextBlock Text="Summary" FontSize="18" FontWeight="SemiBold" />
+                                            <Button Style="{StaticResource GhostButton}" Command="{Binding ResummarizeCommand}" Content="Refresh summary" FontSize="10" HorizontalAlignment="Right" />
+                                        </Grid>
+                                        <Border Style="{StaticResource CardStyle}" Padding="17" Margin="0,0,0,10">
+                                            <StackPanel>
+                                                <TextBlock Text="AUDIO" Style="{StaticResource SectionLabel}" />
+                                                <ComboBox ItemsSource="{Binding AudioSourceOptions}" SelectedItem="{Binding SelectedAudioSource}" Margin="0,10,0,8" />
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <Button Style="{StaticResource SecondaryButton}" Command="{Binding PlayAudioCommand}" Content="Play" FontSize="10" Margin="0,0,6,0" />
+                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding PauseAudioCommand}" Content="Pause" FontSize="10" Margin="0,0,6,0" />
+                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding SkipBackCommand}" Content="−5s" FontSize="10" Margin="0,0,6,0" />
+                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding SkipForwardCommand}" Content="+5s" FontSize="10" />
+                                                </StackPanel>
+                                                <ComboBox ItemsSource="{Binding PlaybackSpeedOptions}" SelectedItem="{Binding PlaybackSpeedLabel}" Margin="0,0,0,8" />
+                                                <TextBlock Text="{Binding PlaybackStatus}" FontSize="10" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding PlaybackPosition, StringFormat=Seek {0:0}s}" FontSize="10" Foreground="{StaticResource BlueBrush}" Margin="0,6,0,0" />
+                                                <Button Style="{StaticResource GhostButton}" Command="{Binding RevealAudioFolderCommand}" Content="Reveal audio folder" FontSize="10" HorizontalAlignment="Left" Margin="0,6,0,0" />
+                                            </StackPanel>
+                                        </Border>
                                         <Border Style="{StaticResource CardStyle}" Padding="17" Margin="0,0,0,10">
                                             <StackPanel>
                                                 <TextBlock Text="OVERVIEW" Style="{StaticResource SectionLabel}" />
@@ -857,25 +1042,46 @@
                                         </Border>
                                         <Border Style="{StaticResource CardStyle}" Padding="17" Margin="0,0,0,10">
                                             <StackPanel>
-                                                <TextBlock Text="KEY POINTS" Style="{StaticResource SectionLabel}" />
-                                                <ItemsControl ItemsSource="{Binding CurrentMeeting.Summary.KeyPoints}" Margin="0,11,0,0">
-                                                    <ItemsControl.ItemTemplate><DataTemplate><Grid Margin="0,0,0,9"><Grid.ColumnDefinitions><ColumnDefinition Width="15" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><Ellipse Width="5" Height="5" Fill="{StaticResource MintBrush}" VerticalAlignment="Top" Margin="0,6,0,0" /><TextBlock Grid.Column="1" Text="{Binding}" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource EditorTextBrush}" /></Grid></DataTemplate></ItemsControl.ItemTemplate>
+                                                <Grid>
+                                                    <TextBlock Text="KEY POINTS" Style="{StaticResource SectionLabel}" />
+                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding AddKeyPointCommand}" Content="+" FontSize="14" HorizontalAlignment="Right" Padding="6,0" />
+                                                </Grid>
+                                                <ItemsControl ItemsSource="{Binding KeyPointEditors}" Margin="0,11,0,0">
+                                                    <ItemsControl.ItemTemplate><DataTemplate><TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" Background="Transparent" BorderThickness="0" Padding="0" FontSize="11" Foreground="{StaticResource EditorTextBrush}" Margin="0,0,0,8" /></DataTemplate></ItemsControl.ItemTemplate>
                                                 </ItemsControl>
                                             </StackPanel>
                                         </Border>
                                         <Border Style="{StaticResource CardStyle}" Padding="17" Margin="0,0,0,10">
                                             <StackPanel>
-                                                <TextBlock Text="DECISIONS" Style="{StaticResource SectionLabel}" />
-                                                <ItemsControl ItemsSource="{Binding CurrentMeeting.Summary.Decisions}" Margin="0,11,0,0">
-                                                    <ItemsControl.ItemTemplate><DataTemplate><Grid Margin="0,0,0,9"><Grid.ColumnDefinitions><ColumnDefinition Width="15" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock Text="✓" Foreground="{StaticResource BlueBrush}" FontSize="11" /><TextBlock Grid.Column="1" Text="{Binding}" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource EditorTextBrush}" /></Grid></DataTemplate></ItemsControl.ItemTemplate>
+                                                <Grid>
+                                                    <TextBlock Text="DECISIONS" Style="{StaticResource SectionLabel}" />
+                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding AddDecisionCommand}" Content="+" FontSize="14" HorizontalAlignment="Right" Padding="6,0" />
+                                                </Grid>
+                                                <ItemsControl ItemsSource="{Binding DecisionEditors}" Margin="0,11,0,0">
+                                                    <ItemsControl.ItemTemplate><DataTemplate><TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" Background="Transparent" BorderThickness="0" Padding="0" FontSize="11" Foreground="{StaticResource EditorTextBrush}" Margin="0,0,0,8" /></DataTemplate></ItemsControl.ItemTemplate>
                                                 </ItemsControl>
                                             </StackPanel>
                                         </Border>
                                         <Border Style="{StaticResource CardStyle}" Padding="17" Margin="0,0,0,10">
                                             <StackPanel>
-                                                <TextBlock Text="ACTION ITEMS" Style="{StaticResource SectionLabel}" />
-                                                <ItemsControl ItemsSource="{Binding CurrentMeeting.Summary.ActionItems}" Margin="0,11,0,0">
-                                                    <ItemsControl.ItemTemplate><DataTemplate><Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="24" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><CheckBox IsChecked="{Binding IsComplete}" VerticalAlignment="Top" Margin="0,0,0,0" /><StackPanel Grid.Column="1"><TextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="11" /><TextBlock Text="{Binding Owner, StringFormat={}Owner: {0}}" FontSize="10" Foreground="{StaticResource BlueBrush}" Margin="0,4,0,0" /><TextBlock Text="{Binding Due, StringFormat={}Due {0}}" FontSize="10" Foreground="{StaticResource SubtleBrush}" Margin="0,2,0,0" /></StackPanel></Grid></DataTemplate></ItemsControl.ItemTemplate>
+                                                <Grid>
+                                                    <TextBlock Text="ACTION ITEMS" Style="{StaticResource SectionLabel}" />
+                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding AddActionCommand}" Content="+" FontSize="14" HorizontalAlignment="Right" Padding="6,0" />
+                                                </Grid>
+                                                <ItemsControl ItemsSource="{Binding ActionEditors}" Margin="0,11,0,0">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Grid Margin="0,0,0,12">
+                                                                <Grid.ColumnDefinitions><ColumnDefinition Width="24" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                                <CheckBox IsChecked="{Binding IsComplete}" VerticalAlignment="Top" />
+                                                                <StackPanel Grid.Column="1">
+                                                                    <TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" Background="Transparent" BorderThickness="0" Padding="0" FontSize="11" />
+                                                                    <TextBox Text="{Binding Owner, UpdateSourceTrigger=PropertyChanged}" FontSize="10" Foreground="{StaticResource BlueBrush}" Background="Transparent" BorderThickness="0" Padding="0" Margin="0,4,0,0" />
+                                                                    <TextBox Text="{Binding Due, UpdateSourceTrigger=PropertyChanged}" FontSize="10" Foreground="{StaticResource SubtleBrush}" Background="Transparent" BorderThickness="0" Padding="0" Margin="0,2,0,0" />
+                                                                </StackPanel>
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
                                                 </ItemsControl>
                                             </StackPanel>
                                         </Border>
@@ -889,18 +1095,30 @@
                                         </Border>
                                         <Border Style="{StaticResource CardStyle}" Padding="17">
                                             <StackPanel>
-                                                <TextBlock Text="QUESTIONS TO CARRY" Style="{StaticResource SectionLabel}" />
-                                                <ItemsControl ItemsSource="{Binding CurrentMeeting.Summary.Questions}" Margin="0,11,0,0">
-                                                    <ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource EditorTextBrush}" Margin="0,0,0,9" /></DataTemplate></ItemsControl.ItemTemplate>
+                                                <Grid>
+                                                    <TextBlock Text="QUESTIONS TO CARRY" Style="{StaticResource SectionLabel}" />
+                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding AddQuestionCommand}" Content="+" FontSize="14" HorizontalAlignment="Right" Padding="6,0" />
+                                                </Grid>
+                                                <ItemsControl ItemsSource="{Binding QuestionEditors}" Margin="0,11,0,0">
+                                                    <ItemsControl.ItemTemplate><DataTemplate><TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" Background="Transparent" BorderThickness="0" Padding="0" FontSize="11" Foreground="{StaticResource EditorTextBrush}" Margin="0,0,0,8" /></DataTemplate></ItemsControl.ItemTemplate>
                                                 </ItemsControl>
                                             </StackPanel>
                                         </Border>
                                         <Border Style="{StaticResource CardStyle}" Padding="17" Margin="0,0,0,10">
                                             <StackPanel>
-                                                <TextBlock Text="IMPORTANT MOMENTS" Style="{StaticResource SectionLabel}" />
-                                                <ItemsControl ItemsSource="{Binding CurrentMeeting.Summary.ImportantMoments}" Margin="0,11,0,0">
-                                                    <ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource GoldBrush}" Margin="0,0,0,9" /></DataTemplate></ItemsControl.ItemTemplate>
+                                                <Grid>
+                                                    <TextBlock Text="IMPORTANT MOMENTS" Style="{StaticResource SectionLabel}" />
+                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding AddMomentCommand}" Content="+" FontSize="14" HorizontalAlignment="Right" Padding="6,0" />
+                                                </Grid>
+                                                <ItemsControl ItemsSource="{Binding MomentEditors}" Margin="0,11,0,0">
+                                                    <ItemsControl.ItemTemplate><DataTemplate><TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" Background="Transparent" BorderThickness="0" Padding="0" FontSize="11" Foreground="{StaticResource GoldBrush}" Margin="0,0,0,8" /></DataTemplate></ItemsControl.ItemTemplate>
                                                 </ItemsControl>
+                                        <Border Style="{StaticResource CardStyle}" Padding="17" Margin="0,10,0,0">
+                                            <StackPanel>
+                                                <TextBlock Text="NOTES" Style="{StaticResource SectionLabel}" />
+                                                <TextBox Text="{Binding CurrentMeeting.Notes, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" AcceptsReturn="True" Background="Transparent" BorderThickness="0" Padding="0" FontSize="12" Foreground="{StaticResource EditorTextBrush}" MinHeight="64" Margin="0,12,0,0" />
+                                            </StackPanel>
+                                        </Border>
                                             </StackPanel>
                                         </Border>
                                     </StackPanel>
@@ -934,13 +1152,16 @@
                                         <TextBlock Text="The people in your conversations" FontSize="26" FontWeight="SemiBold" />
                                         <TextBlock Text="Names are applied across your saved transcripts, so the story gets easier to follow over time." FontSize="13" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,7,0,0" />
                                     </StackPanel>
-                                    <Button x:Name="SpeakersSaveButton" Style="{StaticResource SecondaryButton}" Command="{Binding SaveSpeakerCommand}" HorizontalAlignment="Right" VerticalAlignment="Center" Content="Save all names" FontSize="11" />
+                                    <StackPanel x:Name="SpeakersSaveButton" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <Button Style="{StaticResource GhostButton}" Command="{Binding MergeSelectedSpeakersCommand}" Content="Merge first two" FontSize="11" Margin="0,0,8,0" />
+                                        <Button Style="{StaticResource SecondaryButton}" Command="{Binding SaveSpeakerCommand}" Content="Save all names" FontSize="11" />
+                                    </StackPanel>
                                 </Grid>
                                 <Border Background="{StaticResource SpeakerHintBrush}" BorderBrush="{StaticResource SpeakerHintBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="18" Margin="0,0,0,21">
                                     <Grid x:Name="SpeakerRecognitionPanel">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="49" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                         <Border Width="37" Height="37" CornerRadius="13" Background="{StaticResource MintDimBrush}" Margin="0,0,12,0"><TextBlock Text="◎" FontSize="18" Foreground="{StaticResource MintBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                                        <StackPanel Grid.Column="1"><TextBlock Text="Speaker recognition is on" FontWeight="SemiBold" FontSize="12" /><TextBlock x:Name="SpeakerRecognitionDescription" Text="Meeting Assistant groups voice turns locally before processing them." TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" /></StackPanel>
+                                        <StackPanel Grid.Column="1"><TextBlock Text="Saved names" FontWeight="SemiBold" FontSize="12" /><TextBlock x:Name="SpeakerRecognitionDescription" Text="Names you save here are applied across transcripts. Voice matching is not enabled yet." TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" /></StackPanel>
                                     </Grid>
                                 </Border>
                                 <TextBlock Text="YOUR SPEAKER PROFILES" Style="{StaticResource SectionLabel}" Margin="0,0,0,11" />
@@ -955,8 +1176,10 @@
                                                         <Border Background="{StaticResource MintDimBrush}" CornerRadius="11" Padding="8,4" HorizontalAlignment="Right" VerticalAlignment="Top"><TextBlock Text="Voice profile" FontSize="9" Foreground="{StaticResource MintBrush}" /></Border>
                                                     </Grid>
                                                     <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" FontSize="14" FontWeight="SemiBold" Padding="0,10,0,4" Background="Transparent" BorderThickness="0" />
-                                                    <TextBlock Text="{Binding Role}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                                                    <TextBox Text="{Binding Role, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Foreground="{StaticResource MutedBrush}" Background="Transparent" BorderThickness="0" Padding="0" />
+                                                    <ComboBox ItemsSource="{Binding DataContext.AccentColorOptions, RelativeSource={RelativeSource AncestorType=ItemsControl}}" SelectedItem="{Binding AccentColor}" Margin="0,8,0,0" />
                                                     <TextBlock Text="{Binding Meetings, StringFormat={}{0} meetings together}" FontSize="10" Foreground="{StaticResource SubtleBrush}" Margin="0,8,0,0" />
+                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding DataContext.MergeSelectedSpeakersCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" Content="Merge first two names" FontSize="10" HorizontalAlignment="Left" Margin="0,8,0,0" />
                                                 </StackPanel>
                                             </Border>
                                         </DataTemplate>
@@ -968,10 +1191,42 @@
                             </StackPanel>
                         </Grid>
 
+                        <!-- Next steps -->
+                        <Grid Style="{StaticResource ActionsSurface}">
+                            <StackPanel>
+                                <TextBlock Text="Open action items" FontSize="26" FontWeight="SemiBold" />
+                                <TextBlock Text="Work left across your meetings, without opening every transcript." FontSize="13" Foreground="{StaticResource MutedBrush}" Margin="0,7,0,18" />
+                                <ItemsControl ItemsSource="{Binding InboxActions}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Style="{StaticResource GhostButton}" Command="{Binding DataContext.OpenInboxMeetingCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" HorizontalContentAlignment="Stretch" Padding="0" Margin="0,0,0,9">
+                                                <Border Style="{StaticResource CardStyle}" Padding="16">
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Meeting.Title}" FontSize="11" Foreground="{StaticResource SubtleBrush}" />
+                                                        <TextBlock Text="{Binding Item.Text}" FontSize="13" FontWeight="SemiBold" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                                        <TextBlock Text="{Binding Item.Owner}" FontSize="10" Foreground="{StaticResource BlueBrush}" Margin="0,6,0,0" />
+                                                        <TextBlock Text="{Binding Item.Due}" FontSize="10" Foreground="{StaticResource SubtleBrush}" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Grid>
+
                         <!-- Settings -->
                         <Grid Style="{StaticResource SettingsSurface}">
                             <StackPanel MaxWidth="900">
-                                <Border Style="{StaticResource CardStyle}" Margin="0,0,0,14">
+                                <ItemsControl ItemsSource="{Binding SettingsSectionOptions}" Margin="0,0,0,16">
+                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Style="{StaticResource FilterChip}" Command="{Binding DataContext.SetSettingsSectionCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" Content="{Binding}" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Border Style="{StaticResource AccountSettingsSurface}" Margin="0,0,0,14">
                                     <StackPanel>
                                         <TextBlock Text="APPEARANCE" Style="{StaticResource SectionLabel}" />
                                         <Grid Margin="0,17,0,0">
@@ -984,9 +1239,14 @@
                                             <StackPanel><TextBlock Text="Language" FontSize="12" /><TextBlock Text="Use Vietnamese or English throughout the app." FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" /></StackPanel>
                                             <ComboBox Grid.Column="1" ItemsSource="{Binding LanguageOptions}" SelectedItem="{Binding SelectedLanguage}" />
                                         </Grid>
+                                        <Grid Margin="0,14,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="240" /></Grid.ColumnDefinitions>
+                                            <StackPanel><TextBlock Text="Transcription language" FontSize="12" /><TextBlock Text="Hint the speech model, or leave auto." FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" /></StackPanel>
+                                            <ComboBox Grid.Column="1" ItemsSource="{Binding TranscriptionLanguageOptions}" SelectedItem="{Binding TranscriptionLanguage}" />
+                                        </Grid>
                                     </StackPanel>
                                 </Border>
-                                <Border Style="{StaticResource CardStyle}" Margin="0,0,0,14">
+                                <Border Style="{StaticResource AccountSettingsSurface}" Margin="0,0,0,14">
                                     <StackPanel>
                                         <TextBlock Text="ACCOUNT" Style="{StaticResource SectionLabel}" />
                                         <Grid Margin="0,17,0,0">
@@ -995,24 +1255,27 @@
                                             <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="{Binding CurrentUser.DisplayName}" FontSize="13" FontWeight="SemiBold" /><TextBlock Text="{Binding CurrentUser.Email}" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" /></StackPanel>
                                             <Border Grid.Column="2" Background="{StaticResource MintDimBrush}" CornerRadius="12" Padding="10,5" VerticalAlignment="Center"><TextBlock Text="{Binding SessionModeLabel}" FontSize="10" Foreground="{StaticResource MintBrush}" /></Border>
                                         </Grid>
+                                        <TextBlock Text="{Binding FirebaseProjectLabel}" FontSize="10" Foreground="{StaticResource SubtleBrush}" Margin="0,12,0,0" />
+                                        <TextBlock Text="A local workspace stays on this machine and does not merge into a later Firebase account until you import it." FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,8,0,0" />
                                     </StackPanel>
                                 </Border>
-                                <Border Style="{StaticResource CardStyle}" Margin="0,0,0,14">
+                                <Border Style="{StaticResource CaptureSettingsSurface}" Margin="0,0,0,14">
                                     <StackPanel>
                                         <TextBlock Text="CAPTURE" Style="{StaticResource SectionLabel}" />
                                         <Grid Margin="0,17,0,0">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="240" /></Grid.ColumnDefinitions>
                                             <StackPanel><TextBlock Text="Microphone" FontSize="12" /><TextBlock Text="Input used for new recordings" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" /></StackPanel>
-                                            <ComboBox Grid.Column="1" ItemsSource="{Binding MicrophoneOptions}" SelectedItem="{Binding SelectedMicrophone}" />
+                                            <ComboBox Grid.Column="1" ItemsSource="{Binding MicrophoneDevices}" DisplayMemberPath="Name" SelectedValuePath="Name" SelectedValue="{Binding SelectedMicrophone}" />
                                         </Grid>
                                         <Grid Margin="0,16,0,0">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="240" /></Grid.ColumnDefinitions>
                                             <StackPanel><TextBlock Text="System audio" FontSize="12" /><TextBlock Text="Loopback source for other participants" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" /></StackPanel>
-                                            <ComboBox Grid.Column="1" ItemsSource="{Binding SystemAudioOptions}" SelectedItem="{Binding SelectedSystemAudio}" />
+                                            <ComboBox Grid.Column="1" ItemsSource="{Binding SystemAudioDevices}" DisplayMemberPath="Name" SelectedValuePath="Name" SelectedValue="{Binding SelectedSystemAudio}" />
                                         </Grid>
+                                        <TextBlock Text="Quality is a processing hint. Capture still writes the device native format, then OpenAI normalizes to 16 kHz." FontSize="10" Foreground="{StaticResource SubtleBrush}" TextWrapping="Wrap" Margin="0,12,0,0" />
                                     </StackPanel>
                                 </Border>
-                                <Border Style="{StaticResource CardStyle}" Margin="0,0,0,14">
+                                <Border Style="{StaticResource PrivacySettingsSurface}" Margin="0,0,0,14">
                                     <StackPanel>
                                         <TextBlock Text="PRIVACY &amp; SYNC" Style="{StaticResource SectionLabel}" />
                                         <Grid Margin="0,17,0,0">
@@ -1023,9 +1286,10 @@
                                         <CheckBox Content="Pause cloud sync" IsChecked="{Binding SyncPaused}" Margin="0,19,0,0" />
                                         <TextBlock Text="{Binding SettingsSyncDescription}" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="25,0,0,0" />
                                         <CheckBox Content="Keep a local copy of every recording" IsChecked="{Binding KeepLocalCopy}" />
+                                        <TextBlock Text="{Binding RecordingBytesLabel}" FontSize="10" Foreground="{StaticResource SubtleBrush}" Margin="0,8,0,0" />
                                     </StackPanel>
                                 </Border>
-                                <Border Style="{StaticResource CardStyle}" Margin="0,0,0,14">
+                                <Border Style="{StaticResource AiSettingsSurface}" Margin="0,0,0,14">
                                     <StackPanel>
                                         <Grid>
                                             <TextBlock Text="AI PROVIDERS" Style="{StaticResource SectionLabel}" />
@@ -1053,11 +1317,14 @@
                                                 <TextBlock Text="{Binding OpenAiConnectionStatus}" FontSize="10" Foreground="{StaticResource SubtleBrush}" TextWrapping="Wrap" VerticalAlignment="Center" />
                                                 <TextBlock Text="The key is stored in this Windows user profile, never in the installer." FontSize="10" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,5,0,0" />
                                             </StackPanel>
-                                            <Button Grid.Column="1" Style="{StaticResource SecondaryButton}" Command="{Binding TestOpenAiCommand}" Content="Test connection" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Top" />
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+                                                <Button Style="{StaticResource GhostButton}" Command="{Binding RemoveOpenAiKeyCommand}" Content="Remove key" FontSize="11" Margin="0,0,8,0" />
+                                                <Button Style="{StaticResource SecondaryButton}" Command="{Binding TestOpenAiCommand}" Content="Test connection" FontSize="11" />
+                                            </StackPanel>
                                         </Grid>
                                     </StackPanel>
                                 </Border>
-                                <Border Style="{StaticResource CardStyle}" Margin="0,0,0,14">
+                                <Border Style="{StaticResource UpdateSettingsSurface}" Margin="0,0,0,14">
                                     <StackPanel>
                                         <Grid>
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
@@ -1070,6 +1337,11 @@
                                             </Border>
                                         </Grid>
                                         <Grid Margin="0,16,0,0">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="240" /></Grid.ColumnDefinitions>
+                                            <StackPanel><TextBlock Text="Update policy" FontSize="12" /><TextBlock Text="Choose automatic install, ask first, or off." FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" /></StackPanel>
+                                            <ComboBox Grid.Column="1" ItemsSource="{Binding UpdatePolicyOptions}" SelectedItem="{Binding SelectedUpdatePolicy}" />
+                                        </Grid>
+                                        <Grid Margin="0,16,0,0">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                             <StackPanel VerticalAlignment="Center">
                                                 <TextBlock Text="{Binding UpdateStatus}" FontSize="10" Foreground="{StaticResource SubtleBrush}" TextWrapping="Wrap" />
@@ -1080,11 +1352,12 @@
                                             </StackPanel>
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
                                                 <Button Style="{StaticResource SecondaryButton}" Command="{Binding CheckForUpdatesCommand}" Content="Check for updates" FontSize="11" />
+                                                <Button Style="{StaticResource UpdateAvailableButton}" Command="{Binding InstallUpdateCommand}" Content="Install update" FontSize="11" Margin="8,0,0,0" />
                                             </StackPanel>
                                         </Grid>
                                     </StackPanel>
                                 </Border>
-                                <Border Style="{StaticResource CardStyle}" Margin="0,0,0,14">
+                                <Border Style="{StaticResource ShortcutSettingsSurface}" Margin="0,0,0,14">
                                     <StackPanel>
                                         <TextBlock Text="SHORTCUTS" Style="{StaticResource SectionLabel}" />
                                         <Grid Margin="0,17,0,0">
@@ -1094,6 +1367,7 @@
                                         </Grid>
                                         <TextBlock Text="{Binding HotkeyStatus}" FontSize="10" Foreground="{StaticResource SubtleBrush}" Margin="0,12,0,0" />
                                         <CheckBox Content="Open Meeting Assistant when Windows starts" IsChecked="{Binding StartOnLogin}" />
+                                        <CheckBox Content="Minimize to the tray instead of exiting" IsChecked="{Binding MinimizeToTrayOnClose}" />
                                     </StackPanel>
                                 </Border>
                                 <Button Style="{StaticResource PrimaryButton}" Command="{Binding SaveSettingsCommand}" HorizontalAlignment="Left" Padding="22,10" Content="Save settings" />
@@ -1104,11 +1378,31 @@
                 </ScrollViewer>
 
                 <Border x:Name="ToastBorder" Grid.Row="1" Style="{StaticResource ToastSurface}" Background="{StaticResource ToastBrush}" BorderBrush="{StaticResource ToastBorderBrush}" BorderThickness="1" CornerRadius="11" Padding="15,10" HorizontalAlignment="Right" VerticalAlignment="Bottom" MaxWidth="360" Margin="0,0,32,24">
-                    <TextBlock Text="{Binding ToastMessage}" FontSize="11" Foreground="{StaticResource MintBrush}" TextWrapping="Wrap" />
+                    <Grid>
+                        <TextBlock Text="{Binding ToastMessage}" FontSize="11" Foreground="{StaticResource MintBrush}" TextWrapping="Wrap" Margin="0,0,22,0" />
+                        <Button Style="{StaticResource IconButton}" Command="{Binding DismissToastCommand}" Content="×" Width="22" Height="22" HorizontalAlignment="Right" VerticalAlignment="Top" />
+                    </Grid>
                 </Border>
             </Grid>
 
-            <Border x:Name="UpdateOverlay" Grid.ColumnSpan="2" Panel.ZIndex="50" Style="{StaticResource UpdateOverlaySurface}" Background="#D90B0F17" IsHitTestVisible="True">
+            <Border x:Name="OnboardingOverlay" Grid.ColumnSpan="2" Panel.ZIndex="40" Style="{StaticResource OnboardingSurface}" Background="{StaticResource InkBrush}" Opacity="0.92" IsHitTestVisible="True">
+                <Border Width="460" MaxWidth="520" Margin="24" Padding="28" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="18">
+                    <StackPanel>
+                        <TextBlock Text="WELCOME" Style="{StaticResource SectionLabel}" Foreground="{StaticResource MintBrush}" />
+                        <TextBlock Text="Three things before your first recording" FontSize="22" FontWeight="SemiBold" Margin="0,10,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="1. Capture stays on this device until you sync." FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,16,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="2. Test your microphone so you know both sources work." FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="3. Add an OpenAI key in Settings when you want a real transcript." FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
+                            <Button Style="{StaticResource GhostButton}" Command="{Binding SkipOnboardingCommand}" Content="Skip" FontSize="11" />
+                            <Button Style="{StaticResource PrimaryButton}" Command="{Binding CompleteOnboardingCommand}" Content="Got it" FontSize="11" Margin="8,0,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Border>
+
+            <Border x:Name="UpdateOverlay" Grid.ColumnSpan="2" Panel.ZIndex="50" Style="{StaticResource UpdateOverlaySurface}" Background="{StaticResource InkBrush}" Opacity="0.92" IsHitTestVisible="True">
                 <Border Width="500" MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Border}}" Margin="24" Padding="30" HorizontalAlignment="Center" VerticalAlignment="Center"
                         Background="{StaticResource CardBrush}" BorderBrush="{StaticResource HeroRingBrush}" BorderThickness="1" CornerRadius="20">
                     <StackPanel>
