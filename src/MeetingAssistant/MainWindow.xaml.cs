@@ -39,8 +39,12 @@ public partial class MainWindow : Window
     {
         _hotkeyService.Attach(this);
         _trayService.Initialize(ShowWindow, ViewModel.HandleGlobalHotkey);
+        ApplyNativeChrome();
         ViewModel.RefreshSystemStatus();
     }
+
+    private void ApplyNativeChrome()
+        => NativeWindowChrome.Apply(this, ThemeService.CurrentMode == ThemeMode.Dark);
 
     private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
     {
@@ -49,6 +53,12 @@ public partial class MainWindow : Window
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(MainViewModel.SelectedTheme))
+        {
+            ApplyNativeChrome();
+            return;
+        }
+
         if (e.PropertyName is not (nameof(MainViewModel.CurrentView) or nameof(MainViewModel.IsAuthenticated)))
             return;
 
@@ -65,18 +75,21 @@ public partial class MainWindow : Window
         if (width <= 0 || height <= 0)
             return;
 
-        var compact = width < 1180;
-        var narrow = width < 980;
-        var veryNarrow = width < 900;
-        var authSingleColumn = width < 1060;
+        var compact = width < 1080;
+        var narrow = width < 920;
+        var veryNarrow = width < 820;
+        var authSingleColumn = width < 980;
+        var shortWindow = height < 640;
 
         ApplyAuthLayout(authSingleColumn, compact);
         ApplySidebarLayout(compact);
         ApplyHeaderLayout(compact, narrow, veryNarrow);
+        StatusBar.Visibility = shortWindow ? Visibility.Collapsed : Visibility.Visible;
+        StatusBarRow.Height = new GridLength(shortWindow ? 0 : 32);
 
         ContentFrame.Margin = compact
-            ? narrow ? new Thickness(16, 18, 16, 28) : new Thickness(22, 20, 22, 36)
-            : new Thickness(32, 27, 32, 48);
+            ? narrow ? new Thickness(16, 16, 16, 24) : new Thickness(20, 18, 20, 28)
+            : new Thickness(32, 24, 32, 32);
         ToastBorder.Margin = compact
             ? new Thickness(0, 0, 16, 16)
             : new Thickness(0, 0, 32, 24);
@@ -164,7 +177,7 @@ public partial class MainWindow : Window
 
     private void ApplyHeaderLayout(bool compact, bool narrow, bool veryNarrow)
     {
-        AppHeaderRow.Height = new GridLength(compact ? narrow ? 62 : 68 : 88);
+        AppHeaderRow.Height = new GridLength(compact ? narrow ? 56 : 64 : 72);
         HeaderBorder.Padding = new Thickness(compact ? 16 : 32, 0, compact ? 16 : 32, 0);
         HeaderDescription.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
         HeaderPrivateLabel.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;

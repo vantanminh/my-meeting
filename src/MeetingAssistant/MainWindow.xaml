@@ -4,7 +4,7 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:localization="clr-namespace:MeetingAssistant.Services"
         Title="Meeting Assistant"
-        Width="1440" Height="900" MinWidth="860" MinHeight="600"
+        Width="1280" Height="800" MinWidth="760" MinHeight="560"
         WindowStyle="None" ResizeMode="CanResize"
         Background="{StaticResource InkBrush}"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
@@ -293,9 +293,15 @@
                     <TextBlock x:Name="HeaderPrivateLabel" Text="  ·  PRIVATE BY DEFAULT" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource SubtleBrush}" VerticalAlignment="Center" Margin="16,1,0,0" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button shell:WindowChrome.IsHitTestVisibleInChrome="True" Style="{StaticResource IconButton}" Content="—" FontSize="16" Click="Minimize_Click" />
-                    <Button shell:WindowChrome.IsHitTestVisibleInChrome="True" Style="{StaticResource IconButton}" Content="□" FontSize="12" Click="Maximize_Click" />
-                    <Button shell:WindowChrome.IsHitTestVisibleInChrome="True" Style="{StaticResource IconButton}" Content="×" FontSize="19" Foreground="{StaticResource MutedBrush}" Click="Close_Click" />
+                    <Button x:Name="MinimizeButton" shell:WindowChrome.IsHitTestVisibleInChrome="True" Style="{StaticResource CaptionButton}" AutomationProperties.Name="Minimize" Click="Minimize_Click">
+                        <Path Data="M0,0 L10,0" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1" Width="10" Height="1" />
+                    </Button>
+                    <Button x:Name="MaximizeButton" shell:WindowChrome.IsHitTestVisibleInChrome="True" Style="{StaticResource CaptionButton}" AutomationProperties.Name="Maximize" Click="Maximize_Click">
+                        <Rectangle Width="10" Height="10" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1" />
+                    </Button>
+                    <Button x:Name="CloseButton" shell:WindowChrome.IsHitTestVisibleInChrome="True" Style="{StaticResource CaptionCloseButton}" AutomationProperties.Name="Close" Click="Close_Click">
+                        <Path Data="M0,0 L10,10 M10,0 L0,10" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1" Width="10" Height="10" />
+                    </Button>
                 </StackPanel>
             </Grid>
         </Border>
@@ -476,8 +482,9 @@
 
             <Grid Grid.Column="1" Background="{StaticResource PanelBrush}">
                 <Grid.RowDefinitions>
-                    <RowDefinition x:Name="AppHeaderRow" Height="88" />
+                    <RowDefinition x:Name="AppHeaderRow" Height="72" />
                     <RowDefinition Height="*" />
+                    <RowDefinition x:Name="StatusBarRow" Height="32" />
                 </Grid.RowDefinitions>
                 <Border x:Name="HeaderBorder" Grid.Row="0" BorderBrush="{StaticResource HeaderBorderBrush}" BorderThickness="0,0,0,1" Padding="32,0">
                     <Grid VerticalAlignment="Center">
@@ -486,7 +493,7 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <StackPanel x:Name="HeaderDetails" Grid.Column="0" Margin="0,0,24,0">
-                            <TextBlock Text="{Binding PageTitle}" FontSize="23" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding PageTitle}" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                             <TextBlock x:Name="HeaderDescription" Text="{Binding PageDescription}" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,0" TextTrimming="CharacterEllipsis" />
                         </StackPanel>
                         <StackPanel x:Name="HeaderActions" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -528,7 +535,7 @@
                               Focusable="True"
                               IsTabStop="True"
                               Padding="0,0,0,24">
-                    <Grid x:Name="ContentFrame" Margin="32,27,32,48" VerticalAlignment="Top">
+                    <Grid x:Name="ContentFrame" Margin="32,24,32,32" MaxWidth="1120" HorizontalAlignment="Center" VerticalAlignment="Top">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="72" />
@@ -662,7 +669,7 @@
                                                         </Border>
                                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                             <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                            <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                                                            <WrapPanel Margin="0,5,0,0">
                                                                 <TextBlock Text="{Binding DateLabel, Converter={StaticResource LocalizedTextConverter}}" FontSize="11" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
                                                                 <TextBlock Text="  ·  " FontSize="11" Foreground="{StaticResource SubtleBrush}" />
                                                                 <TextBlock Text="{Binding DurationLabel}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
@@ -670,7 +677,7 @@
                                                                 <TextBlock Text="{Binding StatusLabel}" FontSize="11" Foreground="{StaticResource BlueBrush}" />
                                                                 <TextBlock Text="  ·  " FontSize="11" Foreground="{StaticResource SubtleBrush}" />
                                                                 <TextBlock Text="{Binding ParticipantCount, StringFormat={}{0} speakers}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
-                                                            </StackPanel>
+                                                            </WrapPanel>
                                                         </StackPanel>
                                                         <Border Grid.Column="2" Background="{StaticResource MintDimBrush}" CornerRadius="12" Padding="9,5" VerticalAlignment="Center" Margin="12,0,16,0">
                                                             <TextBlock Text="{Binding SyncStatus, Converter={StaticResource LocalizedTextConverter}}" FontSize="10" Foreground="{StaticResource MintBrush}" />
@@ -925,14 +932,14 @@
                                     <Button Style="{StaticResource GhostButton}" Command="{Binding BackToMeetingsCommand}" HorizontalAlignment="Left" Padding="0,4">
                                         <TextBlock Text="←  All meetings" FontSize="12" Foreground="{StaticResource BlueBrush}" />
                                     </Button>
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <WrapPanel HorizontalAlignment="Right">
                                         <Button Style="{StaticResource GhostButton}" Command="{Binding ExportMeetingCommand}" Content="Export" FontSize="11" Margin="0,0,6,0" />
                                         <Button Style="{StaticResource GhostButton}" Command="{Binding ArchiveMeetingCommand}" Content="Archive" FontSize="11" Margin="0,0,6,0" />
                                         <Button Style="{StaticResource GhostButton}" Command="{Binding DeleteMeetingCommand}" Content="Delete" FontSize="11" Foreground="{StaticResource CoralBrush}" Margin="0,0,6,0" />
                                         <Button Style="{StaticResource SecondaryButton}" Command="{Binding SaveMeetingCommand}" Padding="14,8">
                                             <StackPanel Orientation="Horizontal"><TextBlock Text="✓" Foreground="{StaticResource MintBrush}" Margin="0,0,7,0" /><TextBlock Text="Save changes" FontSize="11" /></StackPanel>
                                         </Button>
-                                    </StackPanel>
+                                    </WrapPanel>
                                 </Grid>
                                 <Border Background="{StaticResource DetailCardBrush}" BorderBrush="{StaticResource DetailCardBorderBrush}" BorderThickness="1" CornerRadius="15" Padding="23" Margin="0,0,0,20">
                                     <Grid>
@@ -1377,7 +1384,15 @@
                     </Grid>
                 </ScrollViewer>
 
-                <Border x:Name="ToastBorder" Grid.Row="1" Style="{StaticResource ToastSurface}" Background="{StaticResource ToastBrush}" BorderBrush="{StaticResource ToastBorderBrush}" BorderThickness="1" CornerRadius="11" Padding="15,10" HorizontalAlignment="Right" VerticalAlignment="Bottom" MaxWidth="360" Margin="0,0,32,24">
+                <Border x:Name="StatusBar" Grid.Row="2" Background="{StaticResource SidebarBrush}" BorderBrush="{StaticResource HeaderBorderBrush}" BorderThickness="0,1,0,0" Padding="16,0">
+                    <Grid VerticalAlignment="Center">
+                        <TextBlock Text="{Binding CaptureProvider}" FontSize="11" Foreground="{StaticResource SubtleBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding CloudStatusLabel}" FontSize="11" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding AppVersionLabel}" FontSize="11" Foreground="{StaticResource SubtleBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                </Border>
+
+                <Border x:Name="ToastBorder" Grid.Row="1" Style="{StaticResource ToastSurface}" Background="{StaticResource ToastBrush}" BorderBrush="{StaticResource ToastBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="15,10" HorizontalAlignment="Right" VerticalAlignment="Bottom" MaxWidth="360" Margin="0,0,32,16">
                     <Grid>
                         <TextBlock Text="{Binding ToastMessage}" FontSize="11" Foreground="{StaticResource MintBrush}" TextWrapping="Wrap" Margin="0,0,22,0" />
                         <Button Style="{StaticResource IconButton}" Command="{Binding DismissToastCommand}" Content="×" Width="22" Height="22" HorizontalAlignment="Right" VerticalAlignment="Top" />

@@ -23,7 +23,7 @@ The first screen supports email/password auth and a local workspace. Local works
 - Processing state with transcription, speaker recognition, analysis, progress, retry, and recovery states.
 - Meeting review with editable transcript, speaker filtering, summary, key points, decisions, action items, deadlines, questions, and speaker renaming.
 - Speaker profile management and settings for capture sources, retention, sync pause, shortcut state, and startup preference.
-- Responsive native window: the sidebar collapses to an icon rail, dense two-column screens reflow into one column, and every workspace view remains vertically scrollable down to the 860×600 minimum window size.
+- Responsive native window: Windows 11 chrome with rounded corners, a Mica-style backdrop, caption buttons, and a status bar. The sidebar collapses to an icon rail, dense two-column screens reflow into one column, content stays centered up to 1120px, and every workspace view remains vertically scrollable down to the 760×560 minimum window size.
 
 ## Architecture
 
