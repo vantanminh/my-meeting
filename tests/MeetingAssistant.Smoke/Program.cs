@@ -73,6 +73,32 @@ try
     if (DiskBudget.WarningFor(10 * 1024 * 1024, null) is null)
         failures.Add("disk budget should warn when free space is critically low");
 
+    var bottomTaskbar = MaximizedWindowPlacement.ForWorkArea(
+        new ScreenRect(0, 0, 1920, 1080),
+        new ScreenRect(0, 0, 1920, 1040));
+    if (bottomTaskbar != new MaximizedPlacement(0, 0, 1920, 1040))
+        failures.Add("maximized window should stop above a bottom taskbar");
+    var topTaskbar = MaximizedWindowPlacement.ForWorkArea(
+        new ScreenRect(1920, 0, 3840, 1080),
+        new ScreenRect(1920, 48, 3840, 1080));
+    if (topTaskbar != new MaximizedPlacement(0, 48, 1920, 1032))
+        failures.Add("maximized window should start below a top taskbar on a secondary monitor");
+    var leftTaskbar = MaximizedWindowPlacement.ForWorkArea(
+        new ScreenRect(-1920, 0, 0, 1080),
+        new ScreenRect(-1872, 0, 0, 1080));
+    if (leftTaskbar != new MaximizedPlacement(48, 0, 1872, 1080))
+        failures.Add("maximized window should start to the right of a left taskbar");
+    var covered = MaximizedWindowPlacement.OverflowOutside(
+        new ScreenRect(-7, -7, 1927, 1087),
+        new ScreenRect(0, 0, 1920, 1040));
+    if (covered != new WorkAreaOverflow(7, 7, 7, 47))
+        failures.Add("content inset should clear the taskbar and the off-screen maximize border");
+    var fitted = MaximizedWindowPlacement.OverflowOutside(
+        new ScreenRect(0, 0, 1920, 1040),
+        new ScreenRect(0, 0, 1920, 1040));
+    if (!fitted.IsEmpty)
+        failures.Add("a window already inside the work area should not add extra inset");
+
     if (AuthValidation.ValidateSignIn("bad", "123") is null || AuthValidation.ValidateSignUp("", "a@b.com", "password") is null)
         failures.Add("auth validation should reject incomplete credentials before a network call");
 

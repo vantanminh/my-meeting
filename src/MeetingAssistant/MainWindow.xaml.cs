@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Threading;
 using MeetingAssistant.Services;
 using MeetingAssistant.ViewModels;
@@ -37,6 +39,7 @@ public partial class MainWindow : Window
 
     private void Window_SourceInitialized(object? sender, EventArgs e)
     {
+        MaximizedWindowPlacement.Attach(this);
         _hotkeyService.Attach(this);
         _trayService.Initialize(ShowWindow, ViewModel.HandleGlobalHotkey);
         ViewModel.RefreshSystemStatus();
@@ -44,7 +47,33 @@ public partial class MainWindow : Window
 
     private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
     {
+        KeepContentInsideWorkArea();
         ApplyResponsiveLayout(e.NewSize.Width, e.NewSize.Height);
+    }
+
+    private void Window_StateChanged(object sender, EventArgs e) => KeepContentInsideWorkArea();
+
+    private void KeepContentInsideWorkArea()
+    {
+        var inset = new Thickness(0);
+        if (WindowState == WindowState.Maximized)
+        {
+            var handle = new WindowInteropHelper(this).Handle;
+            if (MaximizedWindowPlacement.TryMeasureOverflow(handle, out var overflow))
+            {
+                var dpi = VisualTreeHelper.GetDpi(this);
+                var scaleX = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1;
+                var scaleY = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1;
+                inset = new Thickness(
+                    overflow.Left / scaleX,
+                    overflow.Top / scaleY,
+                    overflow.Right / scaleX,
+                    overflow.Bottom / scaleY);
+            }
+        }
+
+        if (RootGrid.Margin != inset)
+            RootGrid.Margin = inset;
     }
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)

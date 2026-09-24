@@ -11,6 +11,7 @@
         Loaded="Window_Loaded"
         SourceInitialized="Window_SourceInitialized"
         SizeChanged="Window_SizeChanged"
+        StateChanged="Window_StateChanged"
         Closing="Window_Closing"
         PreviewKeyDown="Window_PreviewKeyDown"
         localization:LocalizationService.IsEnabled="True">
@@ -271,7 +272,7 @@
         </Style>
     </Window.Resources>
 
-    <Grid>
+    <Grid x:Name="RootGrid">
         <Grid.RowDefinitions>
             <RowDefinition Height="48" />
             <RowDefinition Height="*" />
