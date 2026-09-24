@@ -1111,13 +1111,18 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private void OnAudioLevelsChanged(object? sender, AudioLevelsEventArgs args)
     {
-        System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null) return;
+        dispatcher.BeginInvoke(() =>
         {
-            if (!IsRecording) return;
-            MicrophoneLevel = args.Microphone;
-            SystemAudioLevel = args.SystemAudio;
-            ActiveSpeaker = args.ActiveSpeaker;
-        });
+            if (!IsRecording && !IsTestingDevices) return;
+            if (Math.Abs(MicrophoneLevel - args.Microphone) >= 0.01)
+                MicrophoneLevel = args.Microphone;
+            if (Math.Abs(SystemAudioLevel - args.SystemAudio) >= 0.01)
+                SystemAudioLevel = args.SystemAudio;
+            if (!string.Equals(ActiveSpeaker, args.ActiveSpeaker, StringComparison.Ordinal))
+                ActiveSpeaker = args.ActiveSpeaker;
+        }, System.Windows.Threading.DispatcherPriority.Render);
     }
 
     private void OnGlobalHotkeyRequested(object? sender, EventArgs e)

@@ -73,6 +73,18 @@ try
     if (DiskBudget.WarningFor(10 * 1024 * 1024, null) is null)
         failures.Add("disk budget should warn when free space is critically low");
 
+    var silent = new byte[64];
+    if (AudioLevelMeter.FromBuffer(silent, silent.Length, 32) > 0.05)
+        failures.Add("a silent float buffer should sit near the bottom of the meter");
+    var loud = new byte[64];
+    for (var index = 0; index < loud.Length; index += 4)
+        BitConverter.TryWriteBytes(loud.AsSpan(index), 0.5f);
+    var loudLevel = AudioLevelMeter.FromBuffer(loud, loud.Length, 32);
+    if (loudLevel < 0.7)
+        failures.Add("a loud float buffer should move the meter");
+    if (AudioLevelMeter.Smooth(0.1, 0.9) <= 0.1)
+        failures.Add("meter smoothing should move toward the new level");
+
     var bottomTaskbar = MaximizedWindowPlacement.ForWorkArea(
         new ScreenRect(0, 0, 1920, 1080),
         new ScreenRect(0, 0, 1920, 1040));
