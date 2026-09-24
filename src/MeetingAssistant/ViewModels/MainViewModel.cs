@@ -174,6 +174,15 @@ public sealed partial class MainViewModel : ViewModelBase
         ThemeService.Apply(ThemeService.Parse(_selectedTheme));
         LocalizationService.SetLanguage(_selectedLanguage == "English" ? "en" : "vi");
         LocalizationService.LanguageChanged += OnLanguageChanged;
+        _currentUser = new UserSession
+        {
+            UserId = "offline",
+            DisplayName = string.IsNullOrWhiteSpace(_savedPreferences.DisplayName) ? "Local workspace" : _savedPreferences.DisplayName,
+            Email = "local",
+            IsOffline = true
+        };
+        _isAuthenticated = true;
+        _currentView = WorkspaceView.Dashboard;
 
         _recordingTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _recordingTimer.Tick += (_, _) => UpdateRecordingClock();
@@ -188,7 +197,7 @@ public sealed partial class MainViewModel : ViewModelBase
         SystemAudioOptions = ["Default system audio"];
         QualityOptions = ["Balanced · 48 kHz", "High quality · 48 kHz", "Compact · 16 kHz"];
         RetentionOptions = ["Keep recordings for 7 days", "Keep recordings for 30 days", "Keep recordings until deleted"];
-        ThemeOptions = [nameof(ThemeMode.Dark), nameof(ThemeMode.Light)];
+        ThemeOptions = ["Ink", "Harbor", "Dusk", "Paper", "Moss", "Amber"];
         OpenAiTranscriptionModelOptions = ["gpt-4o-transcribe", "gpt-4o-mini-transcribe", "gpt-transcribe", "gpt-4o-transcribe-diarize", "whisper-1"];
         OpenAiSummaryModelOptions = ["gpt-4.1-mini", "gpt-4o-mini", "gpt-4o"];
         LanguageOptions = ["Tiếng Việt", "English"];
@@ -619,8 +628,10 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public async Task InitializeAsync()
     {
-        var session = await _auth.RestoreAsync();
+        var session = await _auth.RestoreAsync() ?? (await _auth.SignInOfflineAsync()).Session;
         if (session is null) return;
+        if (!string.IsNullOrWhiteSpace(_savedPreferences.DisplayName))
+            session.DisplayName = _savedPreferences.DisplayName;
         await EnterWorkspaceAsync(session, showToast: false);
     }
 
@@ -776,6 +787,13 @@ public sealed partial class MainViewModel : ViewModelBase
         if (cloudMeetings.Count > 0)
         {
             meetings = MergeMeetings(localMeetings, cloudMeetings);
+            await _repository.SaveAsync(meetings);
+        }
+
+        var seeds = meetings.Where(meeting => meeting.Id.StartsWith("seed-", StringComparison.Ordinal)).ToList();
+        if (seeds.Count > 0)
+        {
+            meetings.RemoveAll(meeting => meeting.Id.StartsWith("seed-", StringComparison.Ordinal));
             await _repository.SaveAsync(meetings);
         }
 
@@ -1083,6 +1101,7 @@ public sealed partial class MainViewModel : ViewModelBase
             ProcessingHasError = true;
             ProcessingStage = "We hit a processing problem";
             ProcessingMessage = exception.Message;
+            await RememberFailedRecordingAsync(exception.Message);
         }
         catch (Exception)
         {
@@ -1090,7 +1109,30 @@ public sealed partial class MainViewModel : ViewModelBase
             ProcessingHasError = true;
             ProcessingStage = "We hit a processing problem";
             ProcessingMessage = "The meeting stays available locally. Check your connection or retry.";
+            await RememberFailedRecordingAsync(ProcessingMessage);
         }
+    }
+
+    private async Task RememberFailedRecordingAsync(string message)
+    {
+        if (_lastRecording?.SessionDirectory is not { Length: > 0 } folder) return;
+        var meeting = Meetings.FirstOrDefault(item => item.SessionDirectory == folder) ?? new Meeting();
+        meeting.Title = string.IsNullOrWhiteSpace(_lastRecording.Title) ? "Unprocessed recording" : _lastRecording.Title;
+        meeting.StartedAt = _lastRecording.StartedAt;
+        meeting.Duration = _lastRecording.Duration;
+        meeting.Status = MeetingStatus.Failed;
+        meeting.SyncState = SyncState.Local;
+        meeting.SyncStatus = "Saved locally";
+        meeting.MicrophonePath = _lastRecording.MicrophonePath;
+        meeting.SystemAudioPath = _lastRecording.SystemAudioPath;
+        meeting.SessionDirectory = folder;
+        meeting.Summary ??= new MeetingSummary();
+        meeting.Summary.Overview = message;
+        meeting.UpdatedAt = DateTimeOffset.Now;
+        if (!Meetings.Contains(meeting)) Meetings.Insert(0, meeting);
+        await _repository.SaveAsync(Meetings);
+        RefreshVisibleMeetings();
+        CurrentMeeting = meeting;
     }
 
     private void CancelProcessing()
@@ -1204,6 +1246,7 @@ public sealed partial class MainViewModel : ViewModelBase
             _savedPreferences.MicrophoneId = CreateAudioConfiguration().MicrophoneId ?? "default";
             _savedPreferences.SystemAudioId = CreateAudioConfiguration().SystemAudioId ?? "default";
             _savedPreferences.Quality = SelectedQuality;
+            _savedPreferences.RecordingsDirectory = AppPaths.RecordingsDirectory;
             _savedPreferences.MinimizeToTrayOnClose = MinimizeToTrayOnClose;
             await _preferences.SaveAsync(_savedPreferences);
             _startup.SetEnabled(StartOnLogin);
@@ -1272,7 +1315,7 @@ public sealed partial class MainViewModel : ViewModelBase
         InstallUpdateCommand.RaiseCanExecuteChanged();
         if (!IsAuthenticated || !CanInstallUpdateNow || _availableUpdate is null || IsCheckingForUpdates || IsInstallingUpdate)
             return;
-        if (!string.Equals(SelectedUpdatePolicy, nameof(UpdatePolicy.Automatic), StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(SelectedUpdatePolicy, nameof(UpdatePolicy.Off), StringComparison.OrdinalIgnoreCase))
             return;
 
         _ = InstallUpdateAsync(_availableUpdate);
@@ -1330,7 +1373,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
             if (result.Status == UpdateCheckStatus.UpdateAvailable && result.Update is not null)
             {
-                var automatic = string.Equals(SelectedUpdatePolicy, nameof(UpdatePolicy.Automatic), StringComparison.OrdinalIgnoreCase);
+                var automatic = !string.Equals(SelectedUpdatePolicy, nameof(UpdatePolicy.Off), StringComparison.OrdinalIgnoreCase);
                 if (automatic && CanInstallUpdateNow)
                     updateToInstall = result.Update;
                 else if (automatic)

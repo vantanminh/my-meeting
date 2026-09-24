@@ -7,6 +7,7 @@ public static class AppPaths
 {
     private static readonly object Gate = new();
     private static string? _rootOverride;
+    private static string? _recordingsOverride;
     private static string _currentUserId = "offline";
 
     public static string RootDirectory
@@ -29,7 +30,18 @@ public static class AppPaths
 
     public static string DataDirectory => Path.Combine(RootDirectory, "users", SanitizeUserId(CurrentUserId));
 
-    public static string RecordingsDirectory => Path.Combine(DataDirectory, "Recordings");
+    public static string RecordingsDirectory
+    {
+        get
+        {
+            lock (Gate)
+            {
+                return string.IsNullOrWhiteSpace(_recordingsOverride)
+                    ? Path.Combine(DataDirectory, "Recordings")
+                    : _recordingsOverride;
+            }
+        }
+    }
 
     public static string MeetingsPath => Path.Combine(DataDirectory, "meetings.json");
 
@@ -49,6 +61,16 @@ public static class AppPaths
         }
     }
 
+    public static void SetRecordingsDirectory(string? directory)
+    {
+        lock (Gate)
+        {
+            _recordingsOverride = string.IsNullOrWhiteSpace(directory) ? null : Path.GetFullPath(directory);
+        }
+
+        Directory.CreateDirectory(RecordingsDirectory);
+    }
+
     public static void SetCurrentUser(string? userId)
     {
         lock (Gate)
@@ -66,6 +88,7 @@ public static class AppPaths
         lock (Gate)
         {
             _rootOverride = null;
+            _recordingsOverride = null;
             _currentUserId = "offline";
         }
     }

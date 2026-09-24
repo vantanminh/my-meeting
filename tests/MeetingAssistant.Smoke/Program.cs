@@ -84,6 +84,9 @@ try
         failures.Add("a loud float buffer should move the meter");
     if (AudioLevelMeter.Smooth(0.1, 0.9) <= 0.1)
         failures.Add("meter smoothing should move toward the new level");
+    var remaining = DiskBudget.RemainingRecordingTime(2L * 1024 * 1024 * 1024);
+    if (remaining < TimeSpan.FromMinutes(30))
+        failures.Add("two gigabytes free should leave a usable recording budget");
 
     var bottomTaskbar = MaximizedWindowPlacement.ForWorkArea(
         new ScreenRect(0, 0, 1920, 1080),

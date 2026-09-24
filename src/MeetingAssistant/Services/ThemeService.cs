@@ -8,6 +8,12 @@ namespace MeetingAssistant.Services;
 
 public enum ThemeMode
 {
+    Ink,
+    Harbor,
+    Dusk,
+    Paper,
+    Moss,
+    Amber,
     Dark,
     Light
 }
@@ -163,7 +169,45 @@ public static class ThemeService
             }
         };
 
-    public static ThemeMode CurrentMode { get; private set; } = ThemeMode.Dark;
+    public static ThemeMode CurrentMode { get; private set; } = ThemeMode.Ink;
+
+    private static readonly IReadOnlyDictionary<ThemeMode, IReadOnlyDictionary<string, string>> Adjustments =
+        new Dictionary<ThemeMode, IReadOnlyDictionary<string, string>>
+        {
+            [ThemeMode.Harbor] = new Dictionary<string, string>
+            {
+                ["InkBrush"] = "#071018", ["SidebarBrush"] = "#0C1824", ["PanelBrush"] = "#102033",
+                ["CardBrush"] = "#16304A", ["MintBrush"] = "#79C7FF", ["MintDimBrush"] = "#12344A",
+                ["BlueBrush"] = "#9EB6FF", ["WindowChromeBrush"] = "#071018"
+            },
+            [ThemeMode.Dusk] = new Dictionary<string, string>
+            {
+                ["InkBrush"] = "#120E18", ["SidebarBrush"] = "#1A1424", ["PanelBrush"] = "#221A30",
+                ["CardBrush"] = "#2C2140", ["MintBrush"] = "#D7A6FF", ["MintDimBrush"] = "#3A2750",
+                ["BlueBrush"] = "#F0B7C8", ["WindowChromeBrush"] = "#120E18"
+            },
+            [ThemeMode.Paper] = new Dictionary<string, string>
+            {
+                ["InkBrush"] = "#F3F1EC", ["SidebarBrush"] = "#FFFcf7", ["PanelBrush"] = "#F7F4EE",
+                ["CardBrush"] = "#FFFFFF", ["TextBrush"] = "#1C1915", ["MutedBrush"] = "#5C564C",
+                ["MintBrush"] = "#0F766E", ["MintDimBrush"] = "#D7F3EF", ["LineBrush"] = "#E4DDD2",
+                ["InputBrush"] = "#FFFFFF", ["WindowChromeBrush"] = "#FFFcf7"
+            },
+            [ThemeMode.Moss] = new Dictionary<string, string>
+            {
+                ["InkBrush"] = "#F2F6F1", ["SidebarBrush"] = "#FFFFFF", ["PanelBrush"] = "#F5F8F4",
+                ["CardBrush"] = "#FFFFFF", ["TextBrush"] = "#17211A", ["MutedBrush"] = "#4E6254",
+                ["MintBrush"] = "#1F7A45", ["MintDimBrush"] = "#DDF3E4", ["LineBrush"] = "#D5E3D8",
+                ["WindowChromeBrush"] = "#FFFFFF", ["BlueBrush"] = "#2F6F62"
+            },
+            [ThemeMode.Amber] = new Dictionary<string, string>
+            {
+                ["InkBrush"] = "#FBF6EE", ["SidebarBrush"] = "#FFF9F2", ["PanelBrush"] = "#F8F1E6",
+                ["CardBrush"] = "#FFFFFF", ["TextBrush"] = "#2A2118", ["MutedBrush"] = "#6B5A48",
+                ["MintBrush"] = "#B45309", ["MintDimBrush"] = "#FDE7C7", ["LineBrush"] = "#EADDCB",
+                ["WindowChromeBrush"] = "#FFF9F2", ["BlueBrush"] = "#9A3412"
+            }
+        };
 
     public static void Apply(ThemeMode mode)
     {
@@ -171,7 +215,17 @@ public static class ThemeService
         var resources = WpfApplication.Current?.Resources;
         if (resources is null) return;
 
-        foreach (var (key, hex) in Palettes[mode])
+        var basis = mode is ThemeMode.Paper or ThemeMode.Moss or ThemeMode.Amber or ThemeMode.Light
+            ? ThemeMode.Light
+            : ThemeMode.Dark;
+        var colors = new Dictionary<string, string>(Palettes[basis], StringComparer.OrdinalIgnoreCase);
+        if (Adjustments.TryGetValue(mode, out var adjustments))
+        {
+            foreach (var (key, hex) in adjustments)
+                colors[key] = hex;
+        }
+
+        foreach (var (key, hex) in colors)
         {
             var color = (WpfColor)WpfColorConverter.ConvertFromString(hex)!;
             if (key.EndsWith("Color", StringComparison.Ordinal))
@@ -190,7 +244,18 @@ public static class ThemeService
     }
 
     public static ThemeMode Parse(string? value)
-        => string.Equals(value, nameof(ThemeMode.Light), StringComparison.OrdinalIgnoreCase)
-            ? ThemeMode.Light
-            : ThemeMode.Dark;
+    {
+        if (string.IsNullOrWhiteSpace(value)) return ThemeMode.Ink;
+        if (Enum.TryParse<ThemeMode>(value, ignoreCase: true, out var mode) && mode is not (ThemeMode.Dark or ThemeMode.Light))
+            return mode;
+        return value.ToLowerInvariant() switch
+        {
+            "light" or "paper" => ThemeMode.Paper,
+            "harbor" => ThemeMode.Harbor,
+            "dusk" => ThemeMode.Dusk,
+            "moss" => ThemeMode.Moss,
+            "amber" => ThemeMode.Amber,
+            _ => ThemeMode.Ink
+        };
+    }
 }

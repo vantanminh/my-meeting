@@ -83,7 +83,6 @@ public sealed class LocalAuthService : IAuthService
 
     public async Task<AuthResult> SignInOfflineAsync()
     {
-        await Task.Delay(180);
         var session = new UserSession
         {
             UserId = "offline",

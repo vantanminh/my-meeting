@@ -33,6 +33,8 @@ public partial class MainWindow : Window
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
         ApplyResponsiveLayout(ActualWidth, ActualHeight);
+        SmoothScroll.Attach(ContentScrollViewer);
+        SmoothScroll.Attach(AuthScrollViewer);
         await ViewModel.InitializeAsync();
         LocalizationService.Refresh();
     }
@@ -94,13 +96,17 @@ public partial class MainWindow : Window
         if (width <= 0 || height <= 0)
             return;
 
+        var spacious = width >= 1600;
         var compact = width < 1180;
         var narrow = width < 980;
         var veryNarrow = width < 900;
         var authSingleColumn = width < 1060;
 
         ApplyAuthLayout(authSingleColumn, compact);
-        ApplySidebarLayout(compact);
+        ApplySidebarLayout(compact, spacious);
+        RootGrid.LayoutTransform = spacious
+            ? new ScaleTransform(width >= 1900 ? 1.08 : 1.04, width >= 1900 ? 1.08 : 1.04)
+            : Transform.Identity;
         ApplyHeaderLayout(compact, narrow, veryNarrow);
 
         ContentFrame.Margin = compact
@@ -151,9 +157,9 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ApplySidebarLayout(bool compact)
+    private void ApplySidebarLayout(bool compact, bool spacious)
     {
-        SidebarColumn.Width = new GridLength(compact ? 72 : 232);
+        SidebarColumn.Width = new GridLength(compact ? 84 : spacious ? 280 : 248);
         SidebarLayoutGrid.Margin = compact
             ? new Thickness(8, 16, 8, 14)
             : new Thickness(16, 20, 16, 18);

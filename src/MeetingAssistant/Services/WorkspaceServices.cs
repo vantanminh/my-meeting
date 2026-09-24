@@ -183,6 +183,13 @@ public static class DiskBudget
             return "Long recordings increase transcription cost and are split into 25 MB chunks.";
         return null;
     }
+
+    public static TimeSpan RemainingRecordingTime(long availableBytes)
+    {
+        const long bytesPerSecond = 48_000L * 4 * 2 * 2;
+        var usable = Math.Max(0, availableBytes - (80L * 1024 * 1024));
+        return TimeSpan.FromSeconds(usable / (double)bytesPerSecond);
+    }
 }
 
 public sealed class ExportResult
