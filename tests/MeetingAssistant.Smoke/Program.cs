@@ -592,7 +592,8 @@ sealed class FakeOpenAiHandler : HttpMessageHandler
         if (request.RequestUri?.AbsolutePath == "/v1/audio/transcriptions")
         {
             var requestBody = await request.Content!.ReadAsByteArrayAsync(cancellationToken);
-            TranscriptionBodies.Add(Encoding.ASCII.GetString(requestBody));
+            var bodyText = Encoding.ASCII.GetString(requestBody);
+            TranscriptionBodies.Add(bodyText);
             var wavPayload = ExtractWavPayload(requestBody);
             if (wavPayload.Length > 0) AudioPayloads.Add(wavPayload);
             if (TranscriptionStatus != HttpStatusCode.OK)
@@ -606,7 +607,14 @@ sealed class FakeOpenAiHandler : HttpMessageHandler
                 };
             }
 
-            return JsonResponse(JsonSerializer.Serialize(new { text = "A transcript returned by the fake OpenAI server." }));
+            // Tracks are transcribed independently. Distinct wording keeps both
+            // turns after overlap repair; identical bleed is covered separately.
+            var headerEnd = bodyText.IndexOf("RIFF", StringComparison.Ordinal);
+            var disposition = headerEnd > 0 ? bodyText[..headerEnd] : bodyText;
+            var transcript = disposition.Contains("system-audio", StringComparison.OrdinalIgnoreCase)
+                ? "The participant answered on the system audio track."
+                : "The host spoke from the microphone track.";
+            return JsonResponse(JsonSerializer.Serialize(new { text = transcript }));
         }
 
         if (request.RequestUri?.AbsolutePath == "/v1/responses")
