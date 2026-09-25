@@ -18,7 +18,8 @@ var services = new AppServices();
 try
 {
     var viewModel = new MainViewModel(services);
-    if (viewModel.CurrentView != WorkspaceView.Auth) failures.Add("new sessions should begin on auth");
+    if (viewModel.CurrentView != WorkspaceView.Dashboard || !viewModel.IsAuthenticated || viewModel.CurrentUser is not { IsOffline: true })
+        failures.Add("new sessions should open the local workspace");
     if (viewModel.MicrophoneDevices.Count < 1 || viewModel.SystemAudioDevices.Count < 1)
         failures.Add("audio setup should expose both source lists");
     var greeting = GreetingCopy.TimeOfDay(DateTimeOffset.Now);
@@ -510,30 +511,54 @@ try
         if (Directory.Exists(updateTestDirectory)) Directory.Delete(updateTestDirectory, recursive: true);
     }
 
-    using var capture = new WindowsAudioCaptureService();
     Console.WriteLine("capture start...");
-    await capture.StartAsync(new AudioConfiguration { Title = "Capture smoke test" });
-    Console.WriteLine("capture started: " + capture.CaptureProvider);
-    await Task.Delay(120);
-    var captureResult = await capture.StopAsync();
-    Console.WriteLine("capture stopped");
-    if (captureResult.Duration < TimeSpan.Zero) failures.Add("capture duration cannot be negative");
-    if (string.IsNullOrWhiteSpace(capture.CaptureProvider)) failures.Add("capture provider should be reported");
-    foreach (var path in new[] { captureResult.MicrophonePath, captureResult.SystemAudioPath }.Where(path => !string.IsNullOrWhiteSpace(path)))
+    using (var denied = new WindowsAudioCaptureService(new DeniedCaptureDeviceOpener()))
     {
         try
         {
-            if (new FileInfo(path!).Length <= 44)
+            await denied.StartAsync(new AudioConfiguration { Title = "Denied microphone smoke test" });
+            failures.Add("a refused microphone should stop capture instead of pretending to record");
+        }
+        catch (InvalidOperationException exception) when (exception.Message == WindowsAudioCaptureService.MicrophoneDeniedMessage)
+        {
+            if (denied.IsCapturing || denied.CaptureProvider != "WASAPI unavailable")
+                failures.Add("a refused microphone should stay stopped and report WASAPI unavailable");
+        }
+    }
+
+    using (var capture = new WindowsAudioCaptureService(new ScriptedCaptureDeviceOpener()))
+    {
+        await capture.StartAsync(new AudioConfiguration { Title = "Capture smoke test" });
+        Console.WriteLine("capture started: " + capture.CaptureProvider);
+        await Task.Delay(120);
+        var captureResult = await capture.StopAsync();
+        Console.WriteLine("capture stopped");
+        if (captureResult.Duration < TimeSpan.Zero) failures.Add("capture duration cannot be negative");
+        if (capture.CaptureProvider != "WASAPI · mic + system audio") failures.Add("capture provider should report the opened session");
+        if (capture.IsCapturing) failures.Add("stopping capture should clear the recording flag");
+        foreach (var path in new[] { captureResult.MicrophonePath, captureResult.SystemAudioPath })
+        {
+            if (string.IsNullOrWhiteSpace(path))
             {
-                failures.Add("native capture should close WAV files before processing");
+                failures.Add("capture should return both WAV paths");
                 continue;
             }
 
-            using var reader = new WaveFileReader(path!);
-        }
-        catch (Exception exception)
-        {
-            failures.Add($"native capture should leave a readable WAV file: {exception.Message}");
+            try
+            {
+                if (new FileInfo(path).Length <= 44)
+                {
+                    failures.Add("native capture should close WAV files before processing");
+                    continue;
+                }
+
+                using var reader = new WaveFileReader(path);
+                if (reader.Length <= 0) failures.Add("native capture should leave audio samples in the WAV file");
+            }
+            catch (Exception exception)
+            {
+                failures.Add($"native capture should leave a readable WAV file: {exception.Message}");
+            }
         }
     }
 }
@@ -561,7 +586,7 @@ if (failures.Count > 0)
     return 1;
 }
 
-Console.WriteLine("Smoke checks passed: auth state, audio setup, WASAPI/fallback capture, processing, transcript, speakers, summary, progress, and GitHub updates.");
+Console.WriteLine("Smoke checks passed: local workspace, audio setup, capture refusal, closed WAV tracks, processing, transcript, speakers, summary, progress, and GitHub updates.");
 return 0;
 
 static void WriteFloatWaveFile(string path, double durationSeconds = 1, int sampleRate = 48_000, int channels = 2)
@@ -845,6 +870,27 @@ sealed class FakeFirebaseHandler : HttpMessageHandler
 
     private static Dictionary<string, object> TimestampValue(DateTimeOffset value)
         => new() { ["timestampValue"] = value.ToUniversalTime().ToString("O") };
+}
+
+sealed class DeniedCaptureDeviceOpener : ICaptureDeviceOpener
+{
+    public void Open(CaptureSession session, CancellationToken cancellationToken)
+        => throw new InvalidOperationException("Windows refused the microphone endpoint.");
+}
+
+sealed class ScriptedCaptureDeviceOpener : ICaptureDeviceOpener
+{
+    public void Open(CaptureSession session, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var format = new WaveFormat(16_000, 16, 1);
+        var microphoneWriter = new WaveFileWriter(session.MicrophonePath, format);
+        var systemWriter = new WaveFileWriter(session.SystemAudioPath, format);
+        var samples = new byte[format.AverageBytesPerSecond / 10];
+        microphoneWriter.Write(samples, 0, samples.Length);
+        systemWriter.Write(samples, 0, samples.Length);
+        session.Attach(null, null, microphoneWriter, systemWriter, format.BitsPerSample, format.BitsPerSample);
+    }
 }
 
 sealed class FakeAuthService : IAuthService
