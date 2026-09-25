@@ -17,13 +17,11 @@ public sealed class LocalCloudSyncService : ICloudSyncService
         return Task.FromResult<IReadOnlyList<Meeting>>([]);
     }
 
-    public async Task<SyncResult> SyncAsync(Meeting meeting, CancellationToken cancellationToken = default)
+    public Task<SyncResult> SyncAsync(Meeting meeting, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await Task.Delay(220, cancellationToken);
-
-        return IsPaused
-            ? new SyncResult(true, "Saved locally", "Cloud sync is paused in Settings")
-            : new SyncResult(true, "Local cache ready", "Cloud connector is ready for Firebase credentials");
+        return Task.FromResult(IsPaused
+            ? new SyncResult(true, "Saved locally", "Settings and meetings stay in the local file")
+            : new SyncResult(true, "Saved locally", "This workspace never leaves this computer"));
     }
 }

@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Threading;
 using MeetingAssistant.Services;
 using MeetingAssistant.ViewModels;
@@ -31,12 +33,15 @@ public partial class MainWindow : Window
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
         ApplyResponsiveLayout(ActualWidth, ActualHeight);
+        SmoothScroll.Attach(ContentScrollViewer);
+        SmoothScroll.Attach(AuthScrollViewer);
         await ViewModel.InitializeAsync();
         LocalizationService.Refresh();
     }
 
     private void Window_SourceInitialized(object? sender, EventArgs e)
     {
+        MaximizedWindowPlacement.Attach(this);
         _hotkeyService.Attach(this);
         _trayService.Initialize(ShowWindow, ViewModel.HandleGlobalHotkey);
         ApplyNativeChrome();
@@ -48,7 +53,33 @@ public partial class MainWindow : Window
 
     private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
     {
+        KeepContentInsideWorkArea();
         ApplyResponsiveLayout(e.NewSize.Width, e.NewSize.Height);
+    }
+
+    private void Window_StateChanged(object sender, EventArgs e) => KeepContentInsideWorkArea();
+
+    private void KeepContentInsideWorkArea()
+    {
+        var inset = new Thickness(0);
+        if (WindowState == WindowState.Maximized)
+        {
+            var handle = new WindowInteropHelper(this).Handle;
+            if (MaximizedWindowPlacement.TryMeasureOverflow(handle, out var overflow))
+            {
+                var dpi = VisualTreeHelper.GetDpi(this);
+                var scaleX = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1;
+                var scaleY = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1;
+                inset = new Thickness(
+                    overflow.Left / scaleX,
+                    overflow.Top / scaleY,
+                    overflow.Right / scaleX,
+                    overflow.Bottom / scaleY);
+            }
+        }
+
+        if (RootGrid.Margin != inset)
+            RootGrid.Margin = inset;
     }
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -75,6 +106,7 @@ public partial class MainWindow : Window
         if (width <= 0 || height <= 0)
             return;
 
+        var spacious = width >= 1600;
         var compact = width < 1080;
         var narrow = width < 920;
         var veryNarrow = width < 820;
@@ -82,7 +114,10 @@ public partial class MainWindow : Window
         var shortWindow = height < 640;
 
         ApplyAuthLayout(authSingleColumn, compact);
-        ApplySidebarLayout(compact);
+        ApplySidebarLayout(compact, spacious);
+        RootGrid.LayoutTransform = spacious
+            ? new ScaleTransform(width >= 1900 ? 1.08 : 1.04, width >= 1900 ? 1.08 : 1.04)
+            : Transform.Identity;
         ApplyHeaderLayout(compact, narrow, veryNarrow);
         StatusBar.Visibility = shortWindow ? Visibility.Collapsed : Visibility.Visible;
         StatusBarRow.Height = new GridLength(shortWindow ? 0 : 32);
@@ -135,9 +170,9 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ApplySidebarLayout(bool compact)
+    private void ApplySidebarLayout(bool compact, bool spacious)
     {
-        SidebarColumn.Width = new GridLength(compact ? 72 : 232);
+        SidebarColumn.Width = new GridLength(compact ? 84 : spacious ? 280 : 248);
         SidebarLayoutGrid.Margin = compact
             ? new Thickness(8, 16, 8, 14)
             : new Thickness(16, 20, 16, 18);

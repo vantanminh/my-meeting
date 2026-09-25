@@ -28,7 +28,14 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
     private bool _isPaused;
     private double _lastMicLevel;
     private double _lastSystemLevel;
+    private double _displayMicLevel;
+    private double _displaySystemLevel;
+    private int _microphoneBits = 16;
+    private int _systemBits = 16;
+    private string _candidateSpeaker = "You";
+    private int _speakerVotes;
     private string _activeSpeaker = "Listening for a speaker";
+    private long _lastLevelTick;
 
     public WindowsAudioCaptureService()
     {
@@ -52,28 +59,22 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
 
         try
         {
-            var nativeStart = Task.Run(StartWasapiCapture, cancellationToken);
-            var completed = await Task.WhenAny(nativeStart, Task.Delay(TimeSpan.FromSeconds(3), cancellationToken));
-            if (completed != nativeStart)
-            {
-                _usingFallback = true;
-                CaptureProvider = "Preview fallback · check device permissions";
-                _ = DisposeLateNativeCaptureAsync(nativeStart);
-                await _fallback.StartAsync(configuration, cancellationToken);
-            }
-            else
-            {
-                await nativeStart;
-                _usingFallback = false;
-                CaptureProvider = "WASAPI · mic + system audio";
-            }
+            await Task.Run(StartWasapiCapture, cancellationToken);
+            _usingFallback = false;
+            CaptureProvider = "WASAPI · mic + system audio";
         }
-        catch
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
         {
             _ = Task.Run(StopWasapiCapture);
-            _usingFallback = true;
-            CaptureProvider = "Preview fallback · check device permissions";
-            await _fallback.StartAsync(configuration, cancellationToken);
+            _usingFallback = false;
+            CaptureProvider = "WASAPI unavailable";
+            throw new InvalidOperationException(
+                "Windows did not open the microphone. Allow microphone access and try again.",
+                exception);
         }
 
         IsCapturing = true;
@@ -189,10 +190,15 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
         using var enumerator = new MMDeviceEnumerator();
         var microphoneDevice = ResolveDevice(enumerator, DataFlow.Capture, _configuration.MicrophoneId);
         var systemDevice = ResolveDevice(enumerator, DataFlow.Render, _configuration.SystemAudioId);
-        _microphone = new WasapiCapture(microphoneDevice);
+        _microphone = new WasapiCapture(microphoneDevice) { ShareMode = AudioClientShareMode.Shared };
         _systemAudio = systemDevice is null ? new WasapiLoopbackCapture() : new WasapiLoopbackCapture(systemDevice);
+        _microphoneBits = _microphone.WaveFormat.BitsPerSample;
+        _systemBits = _systemAudio.WaveFormat.BitsPerSample;
         _microphoneWriter = new WaveFileWriter(_microphonePath!, _microphone.WaveFormat);
         _systemWriter = new WaveFileWriter(_systemAudioPath!, _systemAudio.WaveFormat);
+        _displayMicLevel = 0;
+        _displaySystemLevel = 0;
+        _lastLevelTick = 0;
 
         _microphone.DataAvailable += MicrophoneDataAvailable;
         _systemAudio.DataAvailable += SystemAudioDataAvailable;
@@ -225,7 +231,7 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
             lock (_writerLock) _microphoneWriter?.Write(args.Buffer, 0, args.BytesRecorded);
         }
 
-        _lastMicLevel = LevelFromBuffer(args.Buffer, args.BytesRecorded);
+        _lastMicLevel = AudioLevelMeter.FromBuffer(args.Buffer, args.BytesRecorded, _microphoneBits);
         RaiseLevels();
     }
 
@@ -236,30 +242,32 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
             lock (_writerLock) _systemWriter?.Write(args.Buffer, 0, args.BytesRecorded);
         }
 
-        _lastSystemLevel = LevelFromBuffer(args.Buffer, args.BytesRecorded);
+        _lastSystemLevel = AudioLevelMeter.FromBuffer(args.Buffer, args.BytesRecorded, _systemBits);
         RaiseLevels();
     }
 
     private void RaiseLevels()
     {
-        if (!IsCapturing || _isPaused || _usingFallback) return;
-        _activeSpeaker = _lastMicLevel >= _lastSystemLevel ? "You" : "Meeting participant";
-        LevelsChanged?.Invoke(this, new AudioLevelsEventArgs(_lastMicLevel, _lastSystemLevel, _activeSpeaker));
-    }
+        if (_isPaused || _usingFallback) return;
+        var now = Environment.TickCount64;
+        if (now - _lastLevelTick < 33) return;
+        _lastLevelTick = now;
 
-    private static double LevelFromBuffer(byte[] buffer, int count)
-    {
-        if (count < 2) return 0.05;
-        var sampleCount = Math.Min(count / 2, 480);
-        long sum = 0;
-        for (var index = 0; index < sampleCount * 2; index += 2)
+        _displayMicLevel = AudioLevelMeter.Smooth(_displayMicLevel, _lastMicLevel);
+        _displaySystemLevel = AudioLevelMeter.Smooth(_displaySystemLevel, _lastSystemLevel);
+        var nextSpeaker = _displayMicLevel >= _displaySystemLevel ? "You" : "Meeting participant";
+        if (nextSpeaker == _candidateSpeaker)
+            _speakerVotes++;
+        else
         {
-            var sample = (short)(buffer[index] | (buffer[index + 1] << 8));
-            sum += Math.Abs(sample);
+            _candidateSpeaker = nextSpeaker;
+            _speakerVotes = 1;
         }
 
-        var average = sum / (double)(sampleCount * short.MaxValue);
-        return Math.Clamp(average * 2.1, 0.02, 1.0);
+        if (_speakerVotes >= 6)
+            _activeSpeaker = _candidateSpeaker;
+
+        LevelsChanged?.Invoke(this, new AudioLevelsEventArgs(_displayMicLevel, _displaySystemLevel, _activeSpeaker));
     }
 
     private void StopWasapiCapture()

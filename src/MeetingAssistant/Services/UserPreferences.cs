@@ -20,7 +20,9 @@ public sealed class UserPreferences
     public string MicrophoneId { get; set; } = "default";
     public string SystemAudioId { get; set; } = "default";
     public string Quality { get; set; } = "Balanced · 48 kHz";
-    public UpdatePolicy UpdatePolicy { get; set; } = UpdatePolicy.Ask;
+    public string RecordingsDirectory { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = "Local workspace";
+    public UpdatePolicy UpdatePolicy { get; set; } = UpdatePolicy.Automatic;
     public string HotkeyDisplay { get; set; } = "Ctrl + Shift + R";
 }
 

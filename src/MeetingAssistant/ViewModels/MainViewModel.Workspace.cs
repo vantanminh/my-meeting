@@ -75,6 +75,7 @@ public sealed partial class MainViewModel
     public ICommand CompleteOnboardingCommand { get; private set; } = null!;
     public ICommand SkipOnboardingCommand { get; private set; } = null!;
     public ICommand RevealAudioFolderCommand { get; private set; } = null!;
+    public ICommand ChooseRecordingsFolderCommand { get; private set; } = null!;
     public ICommand PlayAudioCommand { get; private set; } = null!;
     public ICommand PauseAudioCommand { get; private set; } = null!;
     public ICommand TogglePlaybackCommand { get; private set; } = null!;
@@ -89,6 +90,7 @@ public sealed partial class MainViewModel
     public ICommand SetSettingsSectionCommand { get; private set; } = null!;
     public ICommand TogglePasswordVisibilityCommand { get; private set; } = null!;
     public ICommand RemoveOpenAiKeyCommand { get; private set; } = null!;
+    public ICommand ResetWorkspaceCommand { get; private set; } = null!;
     public ICommand AssignSpeakerCommand { get; private set; } = null!;
 
     public string TranscriptionLanguage
@@ -249,6 +251,19 @@ public sealed partial class MainViewModel
         }
     }
 
+    public string RecordingsFolderLabel => AppPaths.RecordingsDirectory;
+
+    public string RecordingCapacityLabel
+    {
+        get
+        {
+            var free = DiskBudget.AvailableBytes(AppPaths.RecordingsDirectory);
+            var remaining = DiskBudget.RemainingRecordingTime(free);
+            var hours = (int)remaining.TotalHours;
+            return $"{free / (1024d * 1024d * 1024d):0.0} GB free · about {hours}h {(int)remaining.Minutes}m of recording left";
+        }
+    }
+
     public string LastSyncLabel
     {
         get
@@ -283,6 +298,7 @@ public sealed partial class MainViewModel
         CompleteOnboardingCommand = new RelayCommand(_ => FinishOnboarding());
         SkipOnboardingCommand = new RelayCommand(_ => FinishOnboarding());
         RevealAudioFolderCommand = new RelayCommand(_ => RevealAudioFolder());
+        ChooseRecordingsFolderCommand = new RelayCommand(_ => ChooseRecordingsFolder());
         PlayAudioCommand = new RelayCommand(_ => PlayAudio());
         PauseAudioCommand = new RelayCommand(_ => PauseAudio());
         TogglePlaybackCommand = new RelayCommand(_ => TogglePlayback());
@@ -297,6 +313,7 @@ public sealed partial class MainViewModel
         SetSettingsSectionCommand = new RelayCommand(parameter => SelectedSettingsSection = parameter as string ?? "Account");
         TogglePasswordVisibilityCommand = new RelayCommand(_ => IsPasswordVisible = !IsPasswordVisible);
         RemoveOpenAiKeyCommand = new RelayCommand(_ => RemoveOpenAiKey());
+        ResetWorkspaceCommand = new RelayCommand(parameter => ResetWorkspace(parameter as string));
         AssignSpeakerCommand = new RelayCommand(parameter => AssignSpeaker(parameter));
         _toastTimer.Tick += (_, _) =>
         {
@@ -342,6 +359,7 @@ public sealed partial class MainViewModel
     {
         InitializeWorkspaceCommands();
         _greetingPrefix = GreetingCopy.TimeOfDay(DateTimeOffset.Now);
+        AppPaths.SetRecordingsDirectory(_savedPreferences.RecordingsDirectory);
         SelectedUpdatePolicy = _savedPreferences.UpdatePolicy.ToString();
         TranscriptionLanguage = string.IsNullOrWhiteSpace(_savedPreferences.TranscriptionLanguage) ? "auto" : _savedPreferences.TranscriptionLanguage;
         MinimizeToTrayOnClose = _savedPreferences.MinimizeToTrayOnClose;
@@ -380,6 +398,7 @@ public sealed partial class MainViewModel
     internal void ApplyWorkspace(UserSession session)
     {
         AppPaths.SetCurrentUser(session.UserId);
+        AppPaths.SetRecordingsDirectory(_savedPreferences.RecordingsDirectory);
         RetentionPolicy.Sweep(AppPaths.RecordingsDirectory, RetentionPolicy.RetentionFor(_savedPreferences.RetentionOption), DateTimeOffset.Now);
         _startup.SetEnabled(StartOnLogin);
         RefreshDeviceLists();
@@ -558,6 +577,22 @@ public sealed partial class MainViewModel
         ShowTimedToast("Speakers merged");
     }
 
+    private void ResetWorkspace(string? choice)
+    {
+        if (!Enum.TryParse<WorkspaceResetChoice>(choice, out var parsed)) return;
+        if (!_prompt.Confirm("Reset Meeting Assistant", WorkspaceReset.Describe(parsed))) return;
+        WorkspaceReset.Apply(parsed);
+        if (parsed == WorkspaceResetChoice.RemoveData)
+        {
+            Meetings.Clear();
+            RefreshVisibleMeetings();
+            ShowTimedToast("Meetings and recordings were removed from this computer");
+            return;
+        }
+
+        System.Windows.Application.Current.Shutdown();
+    }
+
     private void FinishOnboarding()
     {
         IsOnboardingVisible = false;
@@ -569,12 +604,41 @@ public sealed partial class MainViewModel
     {
         var folder = CurrentMeeting?.SessionDirectory;
         if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+            folder = _lastRecording?.SessionDirectory;
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+            folder = AppPaths.RecordingsDirectory;
+        Directory.CreateDirectory(folder);
+        try
         {
-            ShowTimedToast("No local audio folder is available for this meeting");
-            return;
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"\"{folder}\"",
+                UseShellExecute = true
+            });
         }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            ShowTimedToast(folder);
+        }
+    }
 
-        PlaybackStatus = folder;
+    private void ChooseRecordingsFolder()
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "Choose where recordings are stored",
+            InitialDirectory = Directory.Exists(AppPaths.RecordingsDirectory) ? AppPaths.RecordingsDirectory : AppPaths.RootDirectory
+        };
+        if (dialog.ShowDialog() != true || string.IsNullOrWhiteSpace(dialog.FolderName))
+            return;
+
+        AppPaths.SetRecordingsDirectory(dialog.FolderName);
+        _savedPreferences.RecordingsDirectory = AppPaths.RecordingsDirectory;
+        _ = _preferences.SaveAsync(_savedPreferences);
+        OnPropertyChanged(nameof(RecordingsFolderLabel));
+        OnPropertyChanged(nameof(RecordingCapacityLabel));
+        ShowTimedToast("New recordings will be saved in the selected folder");
     }
 
     public void SeekTo(TranscriptSegment segment)

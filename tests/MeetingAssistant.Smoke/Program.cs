@@ -73,6 +73,47 @@ try
     if (DiskBudget.WarningFor(10 * 1024 * 1024, null) is null)
         failures.Add("disk budget should warn when free space is critically low");
 
+    var silent = new byte[64];
+    if (AudioLevelMeter.FromBuffer(silent, silent.Length, 32) > 0.05)
+        failures.Add("a silent float buffer should sit near the bottom of the meter");
+    var loud = new byte[64];
+    for (var index = 0; index < loud.Length; index += 4)
+        BitConverter.TryWriteBytes(loud.AsSpan(index), 0.5f);
+    var loudLevel = AudioLevelMeter.FromBuffer(loud, loud.Length, 32);
+    if (loudLevel < 0.7)
+        failures.Add("a loud float buffer should move the meter");
+    if (AudioLevelMeter.Smooth(0.1, 0.9) <= 0.1)
+        failures.Add("meter smoothing should move toward the new level");
+    var remaining = DiskBudget.RemainingRecordingTime(2L * 1024 * 1024 * 1024);
+    if (remaining < TimeSpan.FromMinutes(30))
+        failures.Add("two gigabytes free should leave a usable recording budget");
+
+    var bottomTaskbar = MaximizedWindowPlacement.ForWorkArea(
+        new ScreenRect(0, 0, 1920, 1080),
+        new ScreenRect(0, 0, 1920, 1040));
+    if (bottomTaskbar != new MaximizedPlacement(0, 0, 1920, 1040))
+        failures.Add("maximized window should stop above a bottom taskbar");
+    var topTaskbar = MaximizedWindowPlacement.ForWorkArea(
+        new ScreenRect(1920, 0, 3840, 1080),
+        new ScreenRect(1920, 48, 3840, 1080));
+    if (topTaskbar != new MaximizedPlacement(0, 48, 1920, 1032))
+        failures.Add("maximized window should start below a top taskbar on a secondary monitor");
+    var leftTaskbar = MaximizedWindowPlacement.ForWorkArea(
+        new ScreenRect(-1920, 0, 0, 1080),
+        new ScreenRect(-1872, 0, 0, 1080));
+    if (leftTaskbar != new MaximizedPlacement(48, 0, 1872, 1080))
+        failures.Add("maximized window should start to the right of a left taskbar");
+    var covered = MaximizedWindowPlacement.OverflowOutside(
+        new ScreenRect(-7, -7, 1927, 1087),
+        new ScreenRect(0, 0, 1920, 1040));
+    if (covered != new WorkAreaOverflow(7, 7, 7, 47))
+        failures.Add("content inset should clear the taskbar and the off-screen maximize border");
+    var fitted = MaximizedWindowPlacement.OverflowOutside(
+        new ScreenRect(0, 0, 1920, 1040),
+        new ScreenRect(0, 0, 1920, 1040));
+    if (!fitted.IsEmpty)
+        failures.Add("a window already inside the work area should not add extra inset");
+
     if (AuthValidation.ValidateSignIn("bad", "123") is null || AuthValidation.ValidateSignUp("", "a@b.com", "password") is null)
         failures.Add("auth validation should reject incomplete credentials before a network call");
 
