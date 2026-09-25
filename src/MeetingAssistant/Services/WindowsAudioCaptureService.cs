@@ -8,8 +8,8 @@ namespace MeetingAssistant.Services;
 
 /// <summary>
 /// Captures the default microphone and Windows loopback endpoint into separate WAV
-/// tracks. If Windows denies a device, a local signal adapter keeps the journey
-/// recoverable and makes the failure visible through CaptureProvider.
+/// tracks. A denied device is reported as a failure; capture does not pretend to
+/// be running, and any partial WAV writers are closed before the error returns.
 /// </summary>
 public sealed class WindowsAudioCaptureService : IAudioCaptureService
 {
@@ -36,9 +36,18 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
     private int _speakerVotes;
     private string _activeSpeaker = "Listening for a speaker";
     private long _lastLevelTick;
+    private readonly ICaptureDeviceOpener _deviceOpener;
+
+    public const string MicrophoneDeniedMessage = "Windows did not open the microphone. Allow microphone access and try again.";
 
     public WindowsAudioCaptureService()
+        : this(new WasapiCaptureDeviceOpener())
     {
+    }
+
+    public WindowsAudioCaptureService(ICaptureDeviceOpener deviceOpener)
+    {
+        _deviceOpener = deviceOpener;
         _fallback.LevelsChanged += ForwardFallbackLevels;
     }
 
@@ -59,22 +68,27 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
 
         try
         {
-            await Task.Run(StartWasapiCapture, cancellationToken);
+            await Task.Run(() => StartWasapiCapture(cancellationToken), cancellationToken);
             _usingFallback = false;
             CaptureProvider = "WASAPI · mic + system audio";
         }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
         catch (Exception exception)
         {
-            _ = Task.Run(StopWasapiCapture);
+            try
+            {
+                await Task.Run(StopWasapiCapture);
+            }
+            catch (Exception cleanup)
+            {
+                Trace.TraceWarning("Capture cleanup failed after a denied device open: {0}", cleanup.Message);
+            }
+
             _usingFallback = false;
+            IsCapturing = false;
             CaptureProvider = "WASAPI unavailable";
-            throw new InvalidOperationException(
-                "Windows did not open the microphone. Allow microphone access and try again.",
-                exception);
+            if (exception is OperationCanceledException)
+                throw;
+            throw new InvalidOperationException(MicrophoneDeniedMessage, exception);
         }
 
         IsCapturing = true;
@@ -179,35 +193,43 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
         }
     }
 
-    private void StartWasapiCapture()
+    private void StartWasapiCapture(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         Directory.CreateDirectory(AppPaths.RecordingsDirectory);
         var sessionDirectory = Path.Combine(AppPaths.RecordingsDirectory, $"{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(sessionDirectory);
         _microphonePath = Path.Combine(sessionDirectory, "microphone.wav");
         _systemAudioPath = Path.Combine(sessionDirectory, "system-audio.wav");
-
-        using var enumerator = new MMDeviceEnumerator();
-        var microphoneDevice = ResolveDevice(enumerator, DataFlow.Capture, _configuration.MicrophoneId);
-        var systemDevice = ResolveDevice(enumerator, DataFlow.Render, _configuration.SystemAudioId);
-        _microphone = new WasapiCapture(microphoneDevice) { ShareMode = AudioClientShareMode.Shared };
-        _systemAudio = systemDevice is null ? new WasapiLoopbackCapture() : new WasapiLoopbackCapture(systemDevice);
-        _microphoneBits = _microphone.WaveFormat.BitsPerSample;
-        _systemBits = _systemAudio.WaveFormat.BitsPerSample;
-        _microphoneWriter = new WaveFileWriter(_microphonePath!, _microphone.WaveFormat);
-        _systemWriter = new WaveFileWriter(_systemAudioPath!, _systemAudio.WaveFormat);
         _displayMicLevel = 0;
         _displaySystemLevel = 0;
         _lastLevelTick = 0;
 
-        _microphone.DataAvailable += MicrophoneDataAvailable;
-        _systemAudio.DataAvailable += SystemAudioDataAvailable;
-        _microphone.StartRecording();
-        _systemAudio.StartRecording();
+        _deviceOpener.Open(new CaptureSession(this, _configuration, _microphonePath, _systemAudioPath), cancellationToken);
+        if (_microphone is not null) _microphone.DataAvailable += MicrophoneDataAvailable;
+        if (_systemAudio is not null) _systemAudio.DataAvailable += SystemAudioDataAvailable;
+        _microphone?.StartRecording();
+        _systemAudio?.StartRecording();
         _stopwatch.Restart();
     }
 
-    private static MMDevice ResolveDevice(MMDeviceEnumerator enumerator, DataFlow flow, string? deviceId)
+    internal void AttachOpenedDevices(
+        WasapiCapture? microphone,
+        WasapiLoopbackCapture? systemAudio,
+        WaveFileWriter microphoneWriter,
+        WaveFileWriter systemWriter,
+        int microphoneBits,
+        int systemBits)
+    {
+        _microphone = microphone;
+        _systemAudio = systemAudio;
+        _microphoneWriter = microphoneWriter;
+        _systemWriter = systemWriter;
+        _microphoneBits = microphoneBits;
+        _systemBits = systemBits;
+    }
+
+    internal static MMDevice ResolveDevice(MMDeviceEnumerator enumerator, DataFlow flow, string? deviceId)
     {
         if (!string.IsNullOrWhiteSpace(deviceId) && !string.Equals(deviceId, "default", StringComparison.OrdinalIgnoreCase))
         {
@@ -309,22 +331,6 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
         _systemWriter = null;
     }
 
-    private async Task DisposeLateNativeCaptureAsync(Task nativeStart)
-    {
-        try
-        {
-            await nativeStart;
-        }
-        catch
-        {
-            // The fallback is already active; a failed native attempt is expected.
-        }
-        finally
-        {
-            StopWasapiCapture();
-        }
-    }
-
     private void ForwardFallbackLevels(object? sender, AudioLevelsEventArgs args)
         => LevelsChanged?.Invoke(this, args);
 
@@ -333,5 +339,73 @@ public sealed class WindowsAudioCaptureService : IAudioCaptureService
         if (IsCapturing && !_usingFallback) StopWasapiCapture();
         _fallback.LevelsChanged -= ForwardFallbackLevels;
         _fallback.Dispose();
+    }
+}
+
+public interface ICaptureDeviceOpener
+{
+    void Open(CaptureSession session, CancellationToken cancellationToken);
+}
+
+public sealed class CaptureSession
+{
+    private readonly WindowsAudioCaptureService _service;
+
+    internal CaptureSession(WindowsAudioCaptureService service, AudioConfiguration configuration, string microphonePath, string systemAudioPath)
+    {
+        _service = service;
+        Configuration = configuration;
+        MicrophonePath = microphonePath;
+        SystemAudioPath = systemAudioPath;
+    }
+
+    public AudioConfiguration Configuration { get; }
+    public string MicrophonePath { get; }
+    public string SystemAudioPath { get; }
+
+    public void Attach(
+        WasapiCapture? microphone,
+        WasapiLoopbackCapture? systemAudio,
+        WaveFileWriter microphoneWriter,
+        WaveFileWriter systemWriter,
+        int microphoneBits,
+        int systemBits)
+        => _service.AttachOpenedDevices(microphone, systemAudio, microphoneWriter, systemWriter, microphoneBits, systemBits);
+}
+
+file sealed class WasapiCaptureDeviceOpener : ICaptureDeviceOpener
+{
+    public void Open(CaptureSession session, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        using var enumerator = new MMDeviceEnumerator();
+        var microphoneDevice = WindowsAudioCaptureService.ResolveDevice(enumerator, DataFlow.Capture, session.Configuration.MicrophoneId);
+        var systemDevice = WindowsAudioCaptureService.ResolveDevice(enumerator, DataFlow.Render, session.Configuration.SystemAudioId);
+        WasapiCapture? microphone = null;
+        WasapiLoopbackCapture? systemAudio = null;
+        WaveFileWriter? microphoneWriter = null;
+        WaveFileWriter? systemWriter = null;
+        try
+        {
+            microphone = new WasapiCapture(microphoneDevice) { ShareMode = AudioClientShareMode.Shared };
+            systemAudio = systemDevice is null ? new WasapiLoopbackCapture() : new WasapiLoopbackCapture(systemDevice);
+            microphoneWriter = new WaveFileWriter(session.MicrophonePath, microphone.WaveFormat);
+            systemWriter = new WaveFileWriter(session.SystemAudioPath, systemAudio.WaveFormat);
+            session.Attach(
+                microphone,
+                systemAudio,
+                microphoneWriter,
+                systemWriter,
+                microphone.WaveFormat.BitsPerSample,
+                systemAudio.WaveFormat.BitsPerSample);
+        }
+        catch
+        {
+            try { microphoneWriter?.Dispose(); } catch { }
+            try { systemWriter?.Dispose(); } catch { }
+            try { microphone?.Dispose(); } catch { }
+            try { systemAudio?.Dispose(); } catch { }
+            throw;
+        }
     }
 }
