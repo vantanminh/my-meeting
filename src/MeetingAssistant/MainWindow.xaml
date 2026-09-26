@@ -253,6 +253,12 @@
                 <DataTrigger Binding="{Binding IsSignUpMode}" Value="True"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
             </Style.Triggers>
         </Style>
+        <Style x:Key="MeetingRetrySurface" TargetType="StackPanel">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding MeetingNeedsRetry}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
         <Style x:Key="ProcessingErrorSurface" TargetType="Grid">
             <Setter Property="Visibility" Value="Collapsed" />
             <Style.Triggers>
@@ -893,9 +899,26 @@
                                     <StackPanel>
                                         <Grid>
                                             <TextBlock Text="{Binding ProcessingStage}" FontSize="14" FontWeight="SemiBold" />
-                                            <TextBlock Text="{Binding ProcessingPercent, StringFormat={}{0}%}" HorizontalAlignment="Right" FontSize="13" Foreground="{StaticResource MintBrush}" />
+                                            <TextBlock Text="{Binding ProcessingPercent, StringFormat={}{0}%}" HorizontalAlignment="Right" FontSize="13" Foreground="{StaticResource MintBrush}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ShowProcessingPercent}" Value="False"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
                                         </Grid>
-                                        <ProgressBar Value="{Binding ProcessingPercent, Mode=OneWay}" Maximum="100" Height="8" Margin="0,14,0,25" />
+                                        <Border Margin="0,14,0,25">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ShowProcessingPercent}" Value="False"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <ProgressBar Value="{Binding ProcessingPercent, Mode=OneWay}" Maximum="100" Height="8" />
+                                        </Border>
                                         <ItemsControl ItemsSource="{Binding ProcessingSteps}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
@@ -962,6 +985,11 @@
                                                 <TextBlock Text="{Binding CurrentMeeting.DurationLabel}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
                                                 <TextBlock Text="  ·  " FontSize="11" Foreground="{StaticResource SubtleBrush}" />
                                                 <TextBlock Text="{Binding CurrentMeeting.AudioSources}" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                                            </StackPanel>
+                                            <StackPanel Style="{StaticResource MeetingRetrySurface}">
+                                                <TextBlock Text="Unable to process this meeting." FontWeight="SemiBold" Foreground="{StaticResource CoralBrush}" Margin="0,10,0,0" />
+                                                <TextBlock Text="{Binding ProcessingFailureLabel}" FontSize="12" Foreground="{StaticResource CoralBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                                <Button Style="{StaticResource SecondaryButton}" Command="{Binding RetryProcessingCommand}" Content="Retry" FontSize="11" HorizontalAlignment="Left" Margin="0,8,0,0" />
                                             </StackPanel>
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -1328,6 +1356,10 @@
                                         <TextBlock Text="OpenAI API key" FontSize="12" Margin="0,17,0,7" />
                                         <PasswordBox x:Name="OpenAiApiKeyBox" PasswordChanged="OpenAiApiKeyBox_PasswordChanged" />
                                         <TextBlock Text="{Binding OpenAiKeyStatus}" FontSize="10" Foreground="{StaticResource SubtleBrush}" Margin="0,7,0,0" />
+                                        <TextBlock Text="AssemblyAI API key" FontSize="12" Margin="0,16,0,7" />
+                                        <PasswordBox x:Name="AssemblyAiApiKeyBox" PasswordChanged="AssemblyAiApiKeyBox_PasswordChanged" />
+                                        <TextBlock Text="{Binding AssemblyAiKeyStatus}" FontSize="10" Foreground="{StaticResource SubtleBrush}" Margin="0,7,0,0" />
+                                        <Button Style="{StaticResource GhostButton}" Command="{Binding RemoveAssemblyAiKeyCommand}" Content="Remove key" FontSize="11" HorizontalAlignment="Left" Margin="0,8,0,0" />
                                         <Grid Margin="0,16,0,0">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <StackPanel Margin="0,0,8,0">
@@ -1429,7 +1461,7 @@
                         <TextBlock Text="Three things before your first recording" FontSize="22" FontWeight="SemiBold" Margin="0,10,0,0" TextWrapping="Wrap" />
                         <TextBlock Text="1. Capture stays on this device until you sync." FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,16,0,0" TextWrapping="Wrap" />
                         <TextBlock Text="2. Test your microphone so you know both sources work." FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
-                        <TextBlock Text="3. Add an OpenAI key in Settings when you want a real transcript." FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="3. Add an AssemblyAI key for transcription and an OpenAI key for meeting notes." FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
                             <Button Style="{StaticResource GhostButton}" Command="{Binding SkipOnboardingCommand}" Content="Skip" FontSize="11" />
                             <Button Style="{StaticResource PrimaryButton}" Command="{Binding CompleteOnboardingCommand}" Content="Got it" FontSize="11" Margin="8,0,0,0" />

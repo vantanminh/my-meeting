@@ -42,8 +42,9 @@ public sealed class OpenAiConfiguration
     public const string ScopedApiKeyEnvironmentVariable = "MEETING_ASSISTANT_OPENAI_API_KEY";
     public const string TranscriptionModelEnvironmentVariable = "MEETING_ASSISTANT_OPENAI_TRANSCRIPTION_MODEL";
     public const string SummaryModelEnvironmentVariable = "MEETING_ASSISTANT_OPENAI_SUMMARY_MODEL";
+    public const string SummaryModelAliasEnvironmentVariable = "MEETING_SUMMARY_MODEL";
     public const string DefaultTranscriptionModel = "gpt-4o-transcribe";
-    public const string DefaultSummaryModel = "gpt-4.1-mini";
+    public const string DefaultSummaryModel = "gpt-6-luna";
     public const string TranscriptionLanguageEnvironmentVariable = "MEETING_ASSISTANT_OPENAI_TRANSCRIPTION_LANGUAGE";
 
     private readonly string? _apiKeyOverride;
@@ -80,6 +81,7 @@ public sealed class OpenAiConfiguration
 
     public string SummaryModel => FirstValue(
         ReadEnvironment(SummaryModelEnvironmentVariable),
+        ReadEnvironment(SummaryModelAliasEnvironmentVariable),
         _summaryModelOverride,
         DefaultSummaryModel) ?? DefaultSummaryModel;
 

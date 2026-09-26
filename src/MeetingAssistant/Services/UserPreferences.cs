@@ -15,7 +15,7 @@ public sealed class UserPreferences
     public bool MinimizeToTrayOnClose { get; set; }
     public bool OnboardingCompleted { get; set; }
     public string TranscriptionModel { get; set; } = "gpt-4o-transcribe";
-    public string SummaryModel { get; set; } = "gpt-4.1-mini";
+    public string SummaryModel { get; set; } = OpenAiConfiguration.DefaultSummaryModel;
     public string TranscriptionLanguage { get; set; } = "auto";
     public string MicrophoneId { get; set; } = "default";
     public string SystemAudioId { get; set; } = "default";

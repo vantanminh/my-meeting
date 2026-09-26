@@ -12,6 +12,17 @@ public enum MeetingStatus
     Archived
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ProcessingPhase
+{
+    Pending,
+    Queued,
+    Transcribing,
+    Summarizing,
+    Completed,
+    Failed
+}
+
 public enum SyncState
 {
     Local,
@@ -76,6 +87,20 @@ public sealed class Meeting
     public string? SystemAudioPath { get; set; }
     public string? SessionDirectory { get; set; }
     public bool IsArchived { get; set; }
+    public ProcessingPhase ProcessingPhase { get; set; } = ProcessingPhase.Pending;
+    public string? ProcessingError { get; set; }
+    public string? TranscriptionProvider { get; set; }
+    public string? TranscriptionModel { get; set; }
+    public string? TranscriptionJobId { get; set; }
+    public string? DetectedLanguage { get; set; }
+    public string? TranscriptText { get; set; }
+    public DateTimeOffset? ProcessingStartedAt { get; set; }
+    public DateTimeOffset? TranscribedAt { get; set; }
+    public DateTimeOffset? SummarizedAt { get; set; }
+    public DateTimeOffset? ProcessedAt { get; set; }
+    public long? AudioDurationMs { get; set; }
+    public long? TranscriptionDurationMs { get; set; }
+    public long? SummaryDurationMs { get; set; }
     public List<SpeakerProfile> Speakers { get; set; } = [];
     public List<TranscriptSegment> Transcript { get; set; } = [];
     public MeetingSummary Summary { get; set; } = new();
@@ -119,6 +144,16 @@ public sealed class Meeting
         Transcript ??= [];
         Summary ??= new MeetingSummary();
         Summary.EnsureCollections();
+        if (ProcessingPhase == ProcessingPhase.Pending
+            && Transcript.Count > 0
+            && !string.IsNullOrWhiteSpace(Summary.Overview))
+        {
+            ProcessingPhase = ProcessingPhase.Completed;
+        }
+        else if (Status == MeetingStatus.Failed && ProcessingPhase == ProcessingPhase.Pending)
+        {
+            ProcessingPhase = ProcessingPhase.Failed;
+        }
     }
 }
 
@@ -152,6 +187,7 @@ public sealed class MeetingSummary
     public List<string> Decisions { get; set; } = [];
     public List<ActionItem> ActionItems { get; set; } = [];
     public List<DeadlineItem> Deadlines { get; set; } = [];
+    public List<DecisionItem> DecisionItems { get; set; } = [];
     public List<string> Questions { get; set; } = [];
     public List<string> ImportantMoments { get; set; } = [];
 
@@ -159,6 +195,7 @@ public sealed class MeetingSummary
     {
         KeyPoints ??= [];
         Decisions ??= [];
+        DecisionItems ??= [];
         ActionItems ??= [];
         Deadlines ??= [];
         Questions ??= [];
@@ -166,12 +203,18 @@ public sealed class MeetingSummary
     }
 }
 
+public sealed class DecisionItem
+{
+    public string Content { get; set; } = string.Empty;
+    public string? Speaker { get; set; }
+}
+
 public sealed class ActionItem
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Text { get; set; } = string.Empty;
-    public string Owner { get; set; } = "Unassigned";
-    public string Due { get; set; } = "No date";
+    public string Owner { get; set; } = string.Empty;
+    public string Due { get; set; } = string.Empty;
     public bool IsComplete { get; set; }
     public string? MeetingId { get; set; }
     public string? MeetingTitle { get; set; }
