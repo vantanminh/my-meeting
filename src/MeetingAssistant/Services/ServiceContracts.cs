@@ -50,8 +50,17 @@ public interface IAudioCaptureService : IDisposable
     Task<DeviceTestResult> TestAsync(AudioConfiguration configuration, CancellationToken cancellationToken = default);
 }
 
-public sealed record ProcessingProgress(int Percent, int StageIndex, string Stage, string Message);
+public sealed record ProcessingProgress(int Percent, int StageIndex, string Stage, string Message, bool ShowPercent = true);
 public sealed record ProcessingResult(Meeting Meeting);
+
+public sealed class MeetingProcessingRequest
+{
+    public required RecordingData Recording { get; init; }
+    public required Meeting Meeting { get; init; }
+    public string? TranscriptionLanguage { get; init; }
+    public Func<Meeting, CancellationToken, Task>? Persist { get; init; }
+    public Func<bool>? StillExists { get; init; }
+}
 
 public interface IMeetingIntelligenceService
 {
@@ -61,6 +70,12 @@ public interface IMeetingIntelligenceService
         RecordingData recording,
         IProgress<ProcessingProgress> progress,
         CancellationToken cancellationToken = default);
+
+    Task<ProcessingResult> ProcessMeetingAsync(
+        MeetingProcessingRequest request,
+        IProgress<ProcessingProgress> progress,
+        CancellationToken cancellationToken = default)
+        => ProcessAsync(request.Recording, progress, cancellationToken);
 
     Task<MeetingSummary> SummarizeAsync(
         Meeting meeting,

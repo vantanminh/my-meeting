@@ -16,6 +16,10 @@ domain
 Inner layers must not depend on outer layers. Parse unknown input at boundaries
 before it enters domain code.
 
+## Meeting transcription and notes
+
+Stopping a recording finalizes the local WAV tracks, then `MeetingProcessingService` runs one resumable pass on that meeting: queued, transcribing, summarizing, completed, or failed. AssemblyAI is the default speech-to-text adapter behind `ITranscriptionService`. OpenAI summarization uses the Responses API with a strict meeting-notes schema. A saved transcript is not submitted again when only the summary needs to be retried, and a completed meeting is left as-is.
+
 ## Audio capture and transcription boundary
 
 `WindowsAudioCaptureService.StopAsync` waits for both WASAPI endpoints to stop

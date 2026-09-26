@@ -76,6 +76,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly JsonUserPreferencesStore _preferences;
     private readonly UserPreferences _savedPreferences;
     private readonly OpenAiConfiguration _openAi;
+    private readonly AssemblyAiConfiguration _assemblyAi;
     private readonly OpenAiMeetingIntelligenceService _openAiIntelligence;
     private readonly IUpdateChannelService _updates;
     private readonly DispatcherTimer _recordingTimer;
@@ -110,6 +111,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private string _selectedLanguage = "Tiếng Việt";
     private string _selectedTheme = nameof(ThemeMode.Dark);
     private string _openAiApiKeyInput = string.Empty;
+    private string _assemblyAiApiKeyInput = string.Empty;
     private string _openAiTranscriptionModel = OpenAiConfiguration.DefaultTranscriptionModel;
     private string _openAiSummaryModel = OpenAiConfiguration.DefaultSummaryModel;
     private string _openAiConnectionStatus = "Not tested yet";
@@ -133,6 +135,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private bool _isStopping;
     private bool _isProcessing;
     private bool _processingHasError;
+    private bool _showProcessingPercent;
     private bool _keepLocalCopy = true;
     private bool _syncPaused;
     private bool _startOnLogin = true;
@@ -154,6 +157,7 @@ public sealed partial class MainViewModel : ViewModelBase
         _preferences = services.Preferences;
         _savedPreferences = _preferences.Load();
         _openAi = services.OpenAiConfiguration;
+        _assemblyAi = services.AssemblyAiConfiguration;
         _openAiIntelligence = services.OpenAiIntelligence;
         _updates = services.UpdateService;
         _devices = services.AudioDevices;
@@ -199,7 +203,7 @@ public sealed partial class MainViewModel : ViewModelBase
         RetentionOptions = ["Keep recordings for 7 days", "Keep recordings for 30 days", "Keep recordings until deleted"];
         ThemeOptions = ["Ink", "Harbor", "Dusk", "Paper", "Moss", "Amber"];
         OpenAiTranscriptionModelOptions = ["gpt-4o-transcribe", "gpt-4o-mini-transcribe", "gpt-transcribe", "gpt-4o-transcribe-diarize", "whisper-1"];
-        OpenAiSummaryModelOptions = ["gpt-4.1-mini", "gpt-4o-mini", "gpt-4o"];
+        OpenAiSummaryModelOptions = ["gpt-6-luna", "gpt-4.1-mini", "gpt-4o-mini", "gpt-4o"];
         LanguageOptions = ["Tiếng Việt", "English"];
         TranscriptFilterOptions = ["All speakers"];
         FilteredTranscript = [];
@@ -219,7 +223,7 @@ public sealed partial class MainViewModel : ViewModelBase
         PauseRecordingCommand = new AsyncRelayCommand(PauseRecordingAsync, () => IsRecording && !IsStopping);
         ResumeRecordingCommand = new AsyncRelayCommand(ResumeRecordingAsync, () => IsRecording && IsPaused && !IsStopping);
         StopRecordingCommand = new AsyncRelayCommand(StopRecordingAsync, () => IsRecording && !IsStopping);
-        RetryProcessingCommand = new AsyncRelayCommand(RetryProcessingAsync, () => _lastRecording is not null && !IsProcessing);
+        RetryProcessingCommand = new AsyncRelayCommand(RetryProcessingAsync, () => !IsProcessing && CanRetryProcessing());
         CancelProcessingCommand = new RelayCommand(_ => CancelProcessing(), _ => IsProcessing);
         SaveMeetingCommand = new AsyncRelayCommand(SaveMeetingAsync, () => CurrentMeeting is not null);
         SetTranscriptFilterCommand = new RelayCommand(parameter => SetTranscriptFilter(parameter as string ?? "All speakers"));
@@ -429,9 +433,15 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             if (!SetProperty(ref _currentMeeting, value)) return;
             OnPropertyChanged(nameof(CurrentMeetingTitle));
+            OnPropertyChanged(nameof(MeetingNeedsRetry));
+            OnPropertyChanged(nameof(ProcessingFailureLabel));
             SaveMeetingCommand.RaiseCanExecuteChanged();
+            RetryProcessingCommand.RaiseCanExecuteChanged();
         }
     }
+
+    public bool MeetingNeedsRetry => CurrentMeeting?.ProcessingPhase == ProcessingPhase.Failed;
+    public string ProcessingFailureLabel => CurrentMeeting?.ProcessingError ?? string.Empty;
     public string CurrentMeetingTitle => CurrentMeeting?.Title ?? LocalizationService.Translate("Meeting");
 
     public string ProcessingStage { get => LocalizationService.Translate(_processingStage); private set => SetProperty(ref _processingStage, value); }
@@ -451,6 +461,7 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
     public bool ProcessingHasError { get => _processingHasError; private set => SetProperty(ref _processingHasError, value); }
+    public bool ShowProcessingPercent { get => _showProcessingPercent; private set => SetProperty(ref _showProcessingPercent, value); }
 
     public string TranscriptSpeakerFilter
     {
@@ -490,6 +501,10 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
     public string OpenAiApiKeyInput { get => _openAiApiKeyInput; set => SetProperty(ref _openAiApiKeyInput, value); }
+    public string AssemblyAiApiKeyInput { get => _assemblyAiApiKeyInput; set => SetProperty(ref _assemblyAiApiKeyInput, value); }
+    public string AssemblyAiKeyStatus => _assemblyAi.IsConfigured
+        ? $"{LocalizationService.Translate("Configured")} · {_assemblyAi.ApiKeySource}"
+        : LocalizationService.Translate("AssemblyAI key not configured");
     public string OpenAiTranscriptionModel { get => _openAiTranscriptionModel; set => SetProperty(ref _openAiTranscriptionModel, value); }
     public string OpenAiSummaryModel { get => _openAiSummaryModel; set => SetProperty(ref _openAiSummaryModel, value); }
     public string OpenAiKeyStatus => _openAi.IsConfigured
@@ -649,7 +664,7 @@ public sealed partial class MainViewModel : ViewModelBase
             nameof(RecordingStatus), nameof(ActiveSpeaker), nameof(RecordingIndicatorLabel), nameof(CaptureProvider),
             nameof(CurrentMeetingTitle), nameof(ProcessingStage), nameof(ProcessingMessage), nameof(SettingsSyncDescription),
             nameof(HotkeyStatus), nameof(ToastMessage), nameof(LastSyncLabel), nameof(PageTitle), nameof(PageDescription),
-            nameof(OpenAiKeyStatus), nameof(OpenAiConnectionStatus), nameof(OpenAiProviderLabel), nameof(UpdateChannelLabel),
+            nameof(OpenAiKeyStatus), nameof(AssemblyAiKeyStatus), nameof(OpenAiConnectionStatus), nameof(OpenAiProviderLabel), nameof(UpdateChannelLabel),
             nameof(UpdateStatus), nameof(UpdateStageLabel), nameof(UpdateProgressDetail), nameof(UpdateVersionDescription),
             nameof(GreetingPrefix), nameof(PlaybackStatus), nameof(LastSyncLabel)
         })
@@ -1035,27 +1050,49 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private async Task RetryProcessingAsync()
     {
+        if (CurrentMeeting?.ProcessingPhase == ProcessingPhase.Failed)
+            _lastRecording = RecordingFromMeeting(CurrentMeeting);
         if (_lastRecording is null) return;
         _processingCancellation?.Dispose();
         _processingCancellation = new CancellationTokenSource();
         ProcessingHasError = false;
         IsProcessing = true;
+        CurrentView = WorkspaceView.Processing;
         await ProcessRecordingAsync(_processingCancellation.Token);
     }
 
+    private bool CanRetryProcessing()
+        => _lastRecording is not null || CurrentMeeting?.ProcessingPhase == ProcessingPhase.Failed;
+
     private async Task ProcessRecordingAsync(CancellationToken cancellationToken)
     {
+        if (_lastRecording is null && CurrentMeeting is not null)
+            _lastRecording = RecordingFromMeeting(CurrentMeeting);
         if (_lastRecording is null) return;
+
+        var meeting = EnsureProcessingMeeting(_lastRecording);
+        if (meeting.ProcessingPhase == ProcessingPhase.Completed && meeting.Transcript.Count > 0)
+        {
+            IsProcessing = false;
+            ProcessingHasError = false;
+            CurrentMeeting = meeting;
+            BuildDetailState(meeting);
+            CurrentView = WorkspaceView.Detail;
+            return;
+        }
+
         IsProcessing = true;
         ProcessingHasError = false;
+        ShowProcessingPercent = false;
         ProcessingPercent = 0;
         ProcessingStageIndex = 0;
-        ProcessingStage = "Preparing audio";
-        ProcessingMessage = "Checking microphone and system audio tracks";
+        ProcessingStage = "Processing recording...";
+        ProcessingMessage = "Processing recording...";
         try
         {
             var progress = new Progress<ProcessingProgress>(value =>
             {
+                ShowProcessingPercent = value.ShowPercent;
                 ProcessingPercent = value.Percent;
                 ProcessingStageIndex = value.StageIndex;
                 ProcessingStage = value.Stage;
@@ -1063,12 +1100,25 @@ public sealed partial class MainViewModel : ViewModelBase
                 UpdateProcessingSteps(value.StageIndex);
             });
             ResetProcessingSteps();
-            var result = await _intelligence.ProcessAsync(_lastRecording, progress, cancellationToken);
-            result.Meeting.OwnerUserId = CurrentUser?.UserId;
-            result.Meeting.MicrophonePath = _lastRecording.MicrophonePath;
-            result.Meeting.SystemAudioPath = _lastRecording.SystemAudioPath;
-            result.Meeting.SessionDirectory = _lastRecording.SessionDirectory;
-            if (!KeepLocalCopy)
+            var result = await _intelligence.ProcessMeetingAsync(new MeetingProcessingRequest
+            {
+                Recording = _lastRecording,
+                Meeting = meeting,
+                TranscriptionLanguage = TranscriptionLanguage,
+                Persist = async (updated, token) =>
+                {
+                    if (!Meetings.Contains(updated)) return;
+                    updated.UpdatedAt = DateTimeOffset.Now;
+                    await _repository.SaveAsync(Meetings);
+                    _ = token;
+                },
+                StillExists = () => Meetings.Any(item => item.Id == meeting.Id)
+            }, progress, cancellationToken);
+            result.Meeting.OwnerUserId ??= CurrentUser?.UserId;
+            result.Meeting.MicrophonePath ??= _lastRecording.MicrophonePath;
+            result.Meeting.SystemAudioPath ??= _lastRecording.SystemAudioPath;
+            result.Meeting.SessionDirectory ??= _lastRecording.SessionDirectory;
+            if (!KeepLocalCopy && result.Meeting.ProcessingPhase == ProcessingPhase.Completed)
                 RecordingSafety.DeleteSessionAudio(_lastRecording);
             var sync = await _cloud.SyncAsync(result.Meeting, cancellationToken);
             result.Meeting.SyncStatus = sync.Label;
@@ -1079,7 +1129,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 result.Meeting.LastSyncedAt = DateTimeOffset.Now;
             else
                 await _outbox.EnqueueAsync(result.Meeting.Id);
-            Meetings.Insert(0, result.Meeting);
+            if (!Meetings.Contains(result.Meeting)) Meetings.Insert(0, result.Meeting);
             await _repository.SaveAsync(Meetings);
             RefreshVisibleMeetings();
             CurrentMeeting = result.Meeting;
@@ -1094,45 +1144,102 @@ public sealed partial class MainViewModel : ViewModelBase
             ProcessingHasError = true;
             ProcessingStage = "Processing paused";
             ProcessingMessage = "Your capture is still available. Retry whenever you are ready.";
+            await RememberFailedRecordingAsync(meeting, "Processing was cancelled.");
+        }
+        catch (MeetingProcessingException exception) when (exception.MeetingDeleted)
+        {
+            IsProcessing = false;
+            ProcessingHasError = false;
+            CurrentView = WorkspaceView.Dashboard;
+        }
+        catch (MeetingProcessingException exception)
+        {
+            IsProcessing = false;
+            ProcessingHasError = true;
+            ProcessingStage = "Unable to process this meeting.";
+            ProcessingMessage = exception.Message;
+            await RememberFailedRecordingAsync(meeting, exception.Message);
         }
         catch (OpenAiServiceException exception)
         {
             IsProcessing = false;
             ProcessingHasError = true;
-            ProcessingStage = "We hit a processing problem";
+            ProcessingStage = "Unable to process this meeting.";
             ProcessingMessage = exception.Message;
-            await RememberFailedRecordingAsync(exception.Message);
+            await RememberFailedRecordingAsync(meeting, exception.Message);
         }
         catch (Exception)
         {
             IsProcessing = false;
             ProcessingHasError = true;
-            ProcessingStage = "We hit a processing problem";
+            ProcessingStage = "Unable to process this meeting.";
             ProcessingMessage = "The meeting stays available locally. Check your connection or retry.";
-            await RememberFailedRecordingAsync(ProcessingMessage);
+            await RememberFailedRecordingAsync(meeting, ProcessingMessage);
         }
     }
 
-    private async Task RememberFailedRecordingAsync(string message)
+    private Meeting EnsureProcessingMeeting(RecordingData recording)
     {
-        if (_lastRecording?.SessionDirectory is not { Length: > 0 } folder) return;
-        var meeting = Meetings.FirstOrDefault(item => item.SessionDirectory == folder) ?? new Meeting();
-        meeting.Title = string.IsNullOrWhiteSpace(_lastRecording.Title) ? "Unprocessed recording" : _lastRecording.Title;
-        meeting.StartedAt = _lastRecording.StartedAt;
-        meeting.Duration = _lastRecording.Duration;
-        meeting.Status = MeetingStatus.Failed;
+        Meeting? meeting = null;
+        if (!string.IsNullOrWhiteSpace(recording.SessionDirectory))
+            meeting = Meetings.FirstOrDefault(item => item.SessionDirectory == recording.SessionDirectory);
+        if (meeting is null)
+        {
+            meeting = new Meeting
+            {
+                Title = string.IsNullOrWhiteSpace(recording.Title) ? "Untitled meeting" : recording.Title.Trim(),
+                StartedAt = recording.StartedAt,
+                Duration = recording.Duration,
+                Status = MeetingStatus.Processing,
+                ProcessingPhase = ProcessingPhase.Queued,
+                OwnerUserId = CurrentUser?.UserId,
+                AudioSources = $"{recording.Configuration.Microphone} + {recording.Configuration.SystemAudio}",
+                MicrophonePath = recording.MicrophonePath,
+                SystemAudioPath = recording.SystemAudioPath,
+                SessionDirectory = recording.SessionDirectory
+            };
+            Meetings.Insert(0, meeting);
+        }
+
+        return meeting;
+    }
+
+    private static RecordingData RecordingFromMeeting(Meeting meeting)
+        => new()
+        {
+            Title = meeting.Title,
+            StartedAt = meeting.StartedAt,
+            Duration = meeting.Duration,
+            MicrophonePath = meeting.MicrophonePath,
+            SystemAudioPath = meeting.SystemAudioPath,
+            SessionDirectory = meeting.SessionDirectory,
+            Configuration = new AudioConfiguration
+            {
+                Title = meeting.Title,
+                Microphone = meeting.AudioSources,
+                SystemAudio = meeting.AudioSources
+            }
+        };
+
+    private async Task RememberFailedRecordingAsync(Meeting meeting, string message)
+    {
+        if (meeting.ProcessingPhase != ProcessingPhase.Completed)
+        {
+            meeting.Status = MeetingStatus.Failed;
+            if (meeting.Transcript.Count == 0 || meeting.ProcessingPhase == ProcessingPhase.Failed)
+                meeting.ProcessingPhase = ProcessingPhase.Failed;
+            meeting.ProcessingError = message;
+        }
+
         meeting.SyncState = SyncState.Local;
         meeting.SyncStatus = "Saved locally";
-        meeting.MicrophonePath = _lastRecording.MicrophonePath;
-        meeting.SystemAudioPath = _lastRecording.SystemAudioPath;
-        meeting.SessionDirectory = folder;
-        meeting.Summary ??= new MeetingSummary();
-        meeting.Summary.Overview = message;
         meeting.UpdatedAt = DateTimeOffset.Now;
         if (!Meetings.Contains(meeting)) Meetings.Insert(0, meeting);
         await _repository.SaveAsync(Meetings);
         RefreshVisibleMeetings();
         CurrentMeeting = meeting;
+        OnPropertyChanged(nameof(MeetingNeedsRetry));
+        OnPropertyChanged(nameof(ProcessingFailureLabel));
     }
 
     private void CancelProcessing()
@@ -1233,6 +1340,9 @@ public sealed partial class MainViewModel : ViewModelBase
                     OpenAiSummaryModel);
             }
 
+            if (!string.IsNullOrWhiteSpace(AssemblyAiApiKeyInput))
+                _assemblyAi.SaveUserEnvironment(AssemblyAiApiKeyInput);
+
             _savedPreferences.Theme = SelectedTheme;
             _savedPreferences.Language = SelectedLanguage == "English" ? "en" : "vi";
             _savedPreferences.RetentionOption = RetentionOption;
@@ -1255,6 +1365,7 @@ public sealed partial class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(HotkeyStatus));
             OnPropertyChanged(nameof(SettingsSyncDescription));
             OnPropertyChanged(nameof(OpenAiKeyStatus));
+            OnPropertyChanged(nameof(AssemblyAiKeyStatus));
             OnPropertyChanged(nameof(OpenAiProviderLabel));
             ShowTimedToast("Settings saved · your preferences apply to the next recording");
         }

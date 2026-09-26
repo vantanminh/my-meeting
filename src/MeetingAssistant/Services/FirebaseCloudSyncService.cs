@@ -120,7 +120,12 @@ public sealed class FirebaseCloudSyncService : ICloudSyncService
                 ["audioSources"] = StringValue(meeting.AudioSources),
                 ["transcriptJson"] = StringValue(JsonSerializer.Serialize(meeting.Transcript)),
                 ["summaryJson"] = StringValue(JsonSerializer.Serialize(meeting.Summary)),
-                ["speakerJson"] = StringValue(JsonSerializer.Serialize(meeting.Speakers))
+                ["speakerJson"] = StringValue(JsonSerializer.Serialize(meeting.Speakers)),
+                ["processingPhase"] = StringValue(meeting.ProcessingPhase.ToString()),
+                ["processingError"] = StringValue(meeting.ProcessingError ?? string.Empty),
+                ["transcriptionProvider"] = StringValue(meeting.TranscriptionProvider ?? string.Empty),
+                ["transcriptionJobId"] = StringValue(meeting.TranscriptionJobId ?? string.Empty),
+                ["detectedLanguage"] = StringValue(meeting.DetectedLanguage ?? string.Empty)
             };
             using var request = new HttpRequestMessage(HttpMethod.Patch, endpoint)
             {
@@ -174,15 +179,15 @@ public sealed class FirebaseCloudSyncService : ICloudSyncService
             Status = MeetingStatus.Ready,
             Transcript = ReadJson<List<TranscriptSegment>>(fields, "transcriptJson") ?? [],
             Summary = ReadJson<MeetingSummary>(fields, "summaryJson") ?? new MeetingSummary(),
-            Speakers = ReadJson<List<SpeakerProfile>>(fields, "speakerJson") ?? []
+            Speakers = ReadJson<List<SpeakerProfile>>(fields, "speakerJson") ?? [],
+            ProcessingError = ReadString(fields, "processingError"),
+            TranscriptionProvider = ReadString(fields, "transcriptionProvider"),
+            TranscriptionJobId = ReadString(fields, "transcriptionJobId"),
+            DetectedLanguage = ReadString(fields, "detectedLanguage")
         };
-
-        meeting.Summary.KeyPoints ??= [];
-        meeting.Summary.Decisions ??= [];
-        meeting.Summary.ActionItems ??= [];
-        meeting.Summary.Deadlines ??= [];
-        meeting.Summary.Questions ??= [];
-        meeting.Summary.ImportantMoments ??= [];
+        if (Enum.TryParse<ProcessingPhase>(ReadString(fields, "processingPhase"), ignoreCase: true, out var phase))
+            meeting.ProcessingPhase = phase;
+        meeting.EnsureCollections();
         return meeting;
     }
 

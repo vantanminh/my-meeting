@@ -48,8 +48,8 @@ public sealed class ActionEditorViewModel : ViewModelBase
         MeetingId = item.MeetingId;
         MeetingTitle = item.MeetingTitle ?? string.Empty;
         _text = item.Text;
-        _owner = item.Owner;
-        _due = item.Due;
+        _owner = item.Owner ?? string.Empty;
+        _due = item.Due ?? string.Empty;
         _isComplete = item.IsComplete;
     }
 

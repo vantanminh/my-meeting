@@ -54,25 +54,38 @@ $env:MEETING_ASSISTANT_FIREBASE_PROJECT_ID = "your-project-id"
 
 The rules allow an authenticated user to read and write only `users/{uid}/meetings/*`.
 
-## OpenAI transcription and summaries
+## Speech-to-text and meeting notes
 
-The Settings page can save the OpenAI key to the current Windows user's environment and choose the models used for transcription and summaries. The app reads these variables (the scoped key takes precedence):
+After a recording stops, the app transcribes the finished audio once, then asks OpenAI for structured meeting notes. The same meeting record is updated in place. A retry after a summary failure reuses the saved transcript and does not submit another transcription job. A meeting that already completed is not processed again.
+
+AssemblyAI is the default transcription provider. It uploads the mixed microphone and system-audio WAV from the app, with `speaker_labels` enabled, and polls the pre-recorded transcript API. Speech models follow the current AssemblyAI default, `universal-3-5-pro` with `universal-2` as the language fallback. Vietnamese meetings keep English technical terms: when the meeting language is `vi`, detection is steered to Vietnamese and English code switching instead of translating those terms. `auto` uses AssemblyAI language detection. Speaker labels such as `A` are shown as `Speaker A` with utterance timestamps.
+
+OpenAI writes the notes through the Responses API and structured outputs. The default summary model is `gpt-6-luna`. The whole transcript is sent when it fits the model context. Longer transcripts are split into time-ordered parts, extracted as structured facts, then merged. The model is instructed not to invent decisions, owners, deadlines, or real names.
+
+Keys stay on this machine. The Settings page can save them to the current Windows user environment. The app also reads process environment variables. The scoped key wins when both are set:
 
 ```text
+ASSEMBLYAI_API_KEY
+MEETING_ASSISTANT_ASSEMBLYAI_API_KEY
+MEETING_TRANSCRIPTION_PROVIDER
+MEETING_ASSISTANT_TRANSCRIPTION_PROVIDER
+MEETING_ASSISTANT_ASSEMBLYAI_SPEECH_MODELS
 OPENAI_API_KEY
 MEETING_ASSISTANT_OPENAI_API_KEY
-MEETING_ASSISTANT_OPENAI_TRANSCRIPTION_MODEL
+MEETING_SUMMARY_MODEL
 MEETING_ASSISTANT_OPENAI_SUMMARY_MODEL
+MEETING_ASSISTANT_OPENAI_TRANSCRIPTION_MODEL
+MEETING_ASSISTANT_OPENAI_TRANSCRIPTION_LANGUAGE
 ```
 
-The default transcription model is `gpt-4o-transcribe`. The default summary model is `gpt-4.1-mini`; both are editable in Settings. If no OpenAI key is configured, recordings use the deterministic local demo processor. A real WASAPI recording is reopened and converted to provider-compatible mono 16 kHz PCM16 WAV files before upload, with an extension-bearing filename and `audio/wav` content type. Long tracks are split into safe sub-25 MB uploads and their transcript timestamps are restored. Empty loopback tracks are skipped when another track is valid; preview fallback recordings continue to use the local demo. The original local recording remains available when every track is invalid so `Retry processing` never loses the capture.
+`MEETING_TRANSCRIPTION_PROVIDER=openai` keeps the previous OpenAI file-transcription path. A real WASAPI recording is reopened and converted to provider-compatible mono 16 kHz PCM16 WAV files before upload. Empty loopback tracks are skipped when another track is valid. The original local recording remains available when processing fails, so `Retry` never loses the capture.
 
 For a development run, the minimum setup is:
 
 ```powershell
+$env:ASSEMBLYAI_API_KEY = "your-assemblyai-api-key"
 $env:OPENAI_API_KEY = "your-openai-api-key"
-$env:MEETING_ASSISTANT_OPENAI_TRANSCRIPTION_MODEL = "gpt-4o-transcribe"
-$env:MEETING_ASSISTANT_OPENAI_SUMMARY_MODEL = "gpt-4.1-mini"
+$env:MEETING_SUMMARY_MODEL = "gpt-6-luna"
 dotnet run --project src/MeetingAssistant/MeetingAssistant.csproj
 ```
 

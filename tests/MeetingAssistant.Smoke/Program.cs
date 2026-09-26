@@ -157,14 +157,17 @@ try
         Duration = TimeSpan.FromSeconds(2),
         Configuration = new AudioConfiguration()
     };
-    try
+    if (!services.AssemblyAiConfiguration.IsConfigured)
     {
-        await services.IntelligenceService.ProcessAsync(recording, new Progress<ProcessingProgress>(_ => { }));
-        failures.Add("OpenAI processing without a key should refuse instead of inventing a transcript");
-    }
-    catch (OpenAiServiceException exception) when (exception.Message.Contains("OpenAI API key", StringComparison.OrdinalIgnoreCase))
-    {
-        // Expected honest gate.
+        try
+        {
+            await services.IntelligenceService.ProcessAsync(recording, new Progress<ProcessingProgress>(_ => { }));
+            failures.Add("processing without an AssemblyAI key should refuse instead of inventing a transcript");
+        }
+        catch (MeetingProcessingException exception) when (exception.Message.Contains("AssemblyAI API key", StringComparison.OrdinalIgnoreCase))
+        {
+            // Expected honest gate.
+        }
     }
 
     var processed = await services.DemoIntelligence.ProcessAsync(
@@ -561,6 +564,8 @@ try
             }
         }
     }
+
+    await RunMeetingPipelineSmokeAsync(failures);
 }
 catch (Exception exception)
 {
@@ -588,6 +593,237 @@ if (failures.Count > 0)
 
 Console.WriteLine("Smoke checks passed: local workspace, audio setup, capture refusal, closed WAV tracks, processing, transcript, speakers, summary, progress, and GitHub updates.");
 return 0;
+
+static async Task RunMeetingPipelineSmokeAsync(List<string> failures)
+{
+    var audioDirectory = Path.Combine(Path.GetTempPath(), $"meeting-assistant-assembly-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(audioDirectory);
+    try
+    {
+        var microphonePath = Path.Combine(audioDirectory, "microphone.wav");
+        var systemPath = Path.Combine(audioDirectory, "system-audio.wav");
+        WriteFloatWaveFile(microphonePath, durationSeconds: 3, sampleRate: 48_000, channels: 1);
+        WriteFloatWaveFile(systemPath, durationSeconds: 3, sampleRate: 48_000, channels: 1);
+        var technicalText = "Chúng ta sẽ deploy backend Rust lên Kubernetes rồi lưu file trên Cloudflare R2.";
+        var handler = new FakeMeetingProviderHandler
+        {
+            UtteranceText = technicalText,
+            SummaryJson = VietnameseNotes(actionItems: false, deadline: null)
+        };
+        using var httpClient = new HttpClient(handler);
+        var pipeline = CreatePipeline(httpClient, inputTokenBudget: null);
+        var meeting = new Meeting { Id = "vi-meeting", Title = "Họp sản phẩm" };
+        var recording = PipelineRecording(meeting, microphonePath, systemPath);
+        var result = await pipeline.ProcessMeetingAsync(PipelineRequest(meeting, recording, "vi"), new Progress<ProcessingProgress>(_ => { }));
+
+        if (result.Meeting.Id != "vi-meeting") failures.Add("processing should keep the existing meeting id");
+        if (result.Meeting.ProcessingPhase != ProcessingPhase.Completed) failures.Add("a successful meeting should be completed");
+        if (result.Meeting.Transcript.Count != 2) failures.Add("Vietnamese transcript should keep both speaker turns");
+        if (result.Meeting.Transcript[0].SpeakerName != "Speaker A" || result.Meeting.Transcript[1].SpeakerName != "Speaker B")
+            failures.Add("speaker labels should be shown as Speaker A and Speaker B");
+        if (result.Meeting.Transcript[0].Start != TimeSpan.FromMilliseconds(320))
+            failures.Add("transcript timestamps should come from the provider utterance");
+        if (result.Meeting.Transcript[0].Text != technicalText)
+            failures.Add("technical terms must stay exactly as transcribed");
+        if (!result.Meeting.TranscriptText!.EndsWith(technicalText, StringComparison.Ordinal) && result.Meeting.TranscriptText != technicalText && !result.Meeting.TranscriptText.Contains("Cloudflare R2", StringComparison.Ordinal))
+            failures.Add("the stored transcript should keep the full provider text");
+        if (result.Meeting.DetectedLanguage != "vi") failures.Add("detected language should be stored");
+        if (result.Meeting.Summary.ActionItems.Count != 0) failures.Add("a meeting with no tasks should store an empty action list");
+        if (!result.Meeting.Summary.Overview.Contains("tiếng Việt", StringComparison.Ordinal))
+            failures.Add("the summary should stay in Vietnamese");
+        if (handler.Uploads != 1 || handler.Submits != 1 || handler.SummaryCalls != 1)
+            failures.Add("a normal meeting should make one transcription job and one summary request");
+        if (handler.TranscriptBodies.Any(body => !body.Contains("\"speaker_labels\":true", StringComparison.Ordinal) || body.Contains("speakers_expected", StringComparison.Ordinal)))
+            failures.Add("diarization should be enabled without a guessed speaker count");
+        if (handler.TranscriptBodies.Any(body => !body.Contains("universal-3-5-pro", StringComparison.Ordinal) || !body.Contains("universal-2", StringComparison.Ordinal)))
+            failures.Add("transcription should request the current AssemblyAI speech models");
+        if (handler.TranscriptBodies.Any(body => !body.Contains("code_switching", StringComparison.Ordinal) || !body.Contains("\"vi\"", StringComparison.Ordinal)))
+            failures.Add("Vietnamese meetings should steer detection and keep English code switching");
+        if (handler.SummaryBodies.Any(body => !body.Contains("gpt-6-luna", StringComparison.Ordinal) || !body.Contains("json_schema", StringComparison.Ordinal) || !body.Contains("Never invent a deadline", StringComparison.Ordinal)))
+            failures.Add("summaries should use structured outputs on gpt-6-luna");
+        if (handler.UploadLengths.Count != 1 || handler.UploadLengths[0] < 16_000 * 2 * 2)
+            failures.Add("the full normalized recording should be uploaded once");
+        if (handler.SawApiKeyInBody) failures.Add("provider requests must not put API keys in the body");
+
+        handler.SummaryJson = VietnameseNotes(actionItems: true, deadline: null);
+        var undated = new Meeting { Id = "undated", Title = "Họp kỹ thuật" };
+        await pipeline.ProcessMeetingAsync(PipelineRequest(undated, recording, "vi"), new Progress<ProcessingProgress>(_ => { }));
+        if (undated.Summary.ActionItems.Count != 1 || !string.IsNullOrEmpty(undated.Summary.ActionItems[0].Due))
+            failures.Add("a task without a stated deadline should keep a null deadline");
+        if (!string.IsNullOrEmpty(undated.Summary.ActionItems[0].Owner))
+            failures.Add("a task without a stated owner should keep a null owner");
+
+        var longText = new string('à', 80_000) + "END-OF-TRANSCRIPT";
+        handler.UtteranceText = longText;
+        handler.SummaryJson = VietnameseNotes(actionItems: false, deadline: null);
+        var uploadsBeforeLong = handler.Uploads;
+        var longMeeting = new Meeting { Id = "long-meeting", Title = "Cuộc họp dài" };
+        await pipeline.ProcessMeetingAsync(PipelineRequest(longMeeting, recording, "auto"), new Progress<ProcessingProgress>(_ => { }));
+        if (!longMeeting.TranscriptText!.EndsWith("END-OF-TRANSCRIPT", StringComparison.Ordinal) || longMeeting.Transcript[0].Text.Length < 80_000)
+            failures.Add("long transcripts should be stored without truncation");
+        if (handler.Uploads != uploadsBeforeLong + 1) failures.Add("long audio should still be one upload");
+        if (handler.TranscriptBodies.Last().Contains("\"language_code\"", StringComparison.Ordinal))
+            failures.Add("auto language should use detection instead of a forced language code");
+
+        var failedHandler = new FakeMeetingProviderHandler
+        {
+            UtteranceText = technicalText,
+            SummaryJson = VietnameseNotes(actionItems: false, deadline: null),
+            SummaryFailuresRemaining = 1
+        };
+        using var failedHttp = new HttpClient(failedHandler);
+        var failedPipeline = CreatePipeline(failedHttp, inputTokenBudget: null);
+        var partial = new Meeting { Id = "partial", Title = "Họp dở" };
+        try
+        {
+            await failedPipeline.ProcessMeetingAsync(PipelineRequest(partial, recording, "vi"), new Progress<ProcessingProgress>(_ => { }));
+            failures.Add("a summary failure should surface an error");
+        }
+        catch (MeetingProcessingException)
+        {
+            if (partial.Transcript.Count != 2 || partial.ProcessingPhase != ProcessingPhase.Failed)
+                failures.Add("a summary failure should keep the transcript and mark the meeting failed");
+        }
+
+        failedHandler.SummaryFailuresRemaining = 0;
+        var uploadsAfterFailure = failedHandler.Uploads;
+        await failedPipeline.ProcessMeetingAsync(PipelineRequest(partial, recording, "vi"), new Progress<ProcessingProgress>(_ => { }));
+        if (failedHandler.Uploads != uploadsAfterFailure)
+            failures.Add("retry after a summary failure should not transcribe again");
+        if (partial.ProcessingPhase != ProcessingPhase.Completed || string.IsNullOrWhiteSpace(partial.Summary.Overview))
+            failures.Add("retry should finish the saved transcript into notes");
+
+        var duplicateHandler = new FakeMeetingProviderHandler
+        {
+            UtteranceText = technicalText,
+            SummaryJson = VietnameseNotes(actionItems: false, deadline: null),
+            DelayFirstPoll = true
+        };
+        using var duplicateHttp = new HttpClient(duplicateHandler);
+        var duplicatePipeline = CreatePipeline(duplicateHttp, inputTokenBudget: null);
+        var duplicateMeeting = new Meeting { Id = "duplicate", Title = "Họp một lần" };
+        var duplicateRequest = PipelineRequest(duplicateMeeting, recording, "vi");
+        await Task.WhenAll(
+            duplicatePipeline.ProcessMeetingAsync(duplicateRequest, new Progress<ProcessingProgress>(_ => { })),
+            duplicatePipeline.ProcessMeetingAsync(duplicateRequest, new Progress<ProcessingProgress>(_ => { })));
+        if (duplicateHandler.Uploads != 1 || duplicateHandler.Submits != 1)
+            failures.Add("a duplicate finish should not create a second transcription job");
+
+        var finishedUploads = duplicateHandler.Uploads;
+        await duplicatePipeline.ProcessMeetingAsync(duplicateRequest, new Progress<ProcessingProgress>(_ => { }));
+        if (duplicateHandler.Uploads != finishedUploads)
+            failures.Add("a completed meeting should not be processed again");
+
+        var resumeHandler = new FakeMeetingProviderHandler
+        {
+            UtteranceText = technicalText,
+            SummaryJson = VietnameseNotes(actionItems: false, deadline: null)
+        };
+        using var resumeHttp = new HttpClient(resumeHandler);
+        var resumePipeline = CreatePipeline(resumeHttp, inputTokenBudget: null);
+        var resumeMeeting = new Meeting
+        {
+            Id = "resume-job",
+            Title = "Họp tiếp",
+            ProcessingPhase = ProcessingPhase.Transcribing,
+            TranscriptionJobId = "job-existing"
+        };
+        await resumePipeline.ProcessMeetingAsync(PipelineRequest(resumeMeeting, recording, "vi"), new Progress<ProcessingProgress>(_ => { }));
+        if (resumeHandler.Uploads != 0 || resumeMeeting.Transcript.Count != 2)
+            failures.Add("an existing transcription job should be polled instead of uploaded again");
+
+        var chunkHandler = new FakeMeetingProviderHandler();
+        using var chunkHttp = new HttpClient(chunkHandler);
+        var chunkSummary = new MeetingSummaryService(new OpenAiConfiguration("openai-test-key", summaryModelOverride: "gpt-6-luna"), chunkHttp, inputTokenBudget: 80);
+        var paragraphA = "CHUNK-A-PARAGRAPH " + new string('à', 500);
+        var paragraphB = "CHUNK-B-PARAGRAPH " + new string('b', 500);
+        var chunkNotes = await chunkSummary.SummarizeAsync(
+            "Long meeting",
+            "vi",
+            [
+                new TranscriptSegment { SpeakerName = "Speaker A", Start = TimeSpan.FromSeconds(1), End = TimeSpan.FromSeconds(20), Text = paragraphA },
+                new TranscriptSegment { SpeakerName = "Speaker B", Start = TimeSpan.FromSeconds(21), End = TimeSpan.FromSeconds(40), Text = paragraphB }
+            ]);
+        if (chunkHandler.SummaryCalls < 3)
+            failures.Add("a transcript over the context budget should extract each part and merge once");
+        if (!chunkHandler.SummaryBodies.Any(body => body.Contains(paragraphA, StringComparison.Ordinal))
+            || !chunkHandler.SummaryBodies.Any(body => body.Contains(paragraphB, StringComparison.Ordinal)))
+            failures.Add("chunked extraction should send each part in full");
+        if (!chunkHandler.SummaryBodies.Any(body => body.Contains("Merge these structured", StringComparison.Ordinal) && !body.Contains(paragraphA, StringComparison.Ordinal)))
+            failures.Add("the final merge should combine structured extracts rather than nested prose summaries");
+        if (chunkNotes.Summary.ActionItems.Count != 2)
+            failures.Add("merged notes should keep action items from every part");
+        if (MeetingSummaryService.ContextWindow("gpt-6-luna") != 1_050_000)
+            failures.Add("gpt-6-luna should use its documented context window");
+
+        try
+        {
+            await pipeline.ProcessMeetingAsync(
+                PipelineRequest(new Meeting { Id = "missing-audio", Title = "Empty" }, new RecordingData { Title = "Empty" }, "vi"),
+                new Progress<ProcessingProgress>(_ => { }));
+            failures.Add("missing audio should fail before transcription");
+        }
+        catch (MeetingProcessingException exception) when (exception.Message.Contains("No usable recording audio", StringComparison.OrdinalIgnoreCase))
+        {
+        }
+    }
+    finally
+    {
+        if (Directory.Exists(audioDirectory)) Directory.Delete(audioDirectory, recursive: true);
+    }
+}
+
+static MeetingProcessingService CreatePipeline(HttpClient httpClient, int? inputTokenBudget)
+{
+    var assembly = new AssemblyAiConfiguration("assembly-test-key");
+    var openAi = new OpenAiConfiguration("openai-test-key", summaryModelOverride: "gpt-6-luna");
+    return new MeetingProcessingService(
+        assembly,
+        openAi,
+        new AssemblyAiTranscriptionService(assembly, httpClient, TimeSpan.Zero),
+        new MeetingSummaryService(openAi, httpClient, inputTokenBudget),
+        new OpenAiMeetingIntelligenceService(openAi, httpClient: httpClient));
+}
+
+static MeetingProcessingRequest PipelineRequest(Meeting meeting, RecordingData recording, string language)
+    => new()
+    {
+        Meeting = meeting,
+        Recording = recording,
+        TranscriptionLanguage = language
+    };
+
+static RecordingData PipelineRecording(Meeting meeting, string microphonePath, string systemPath)
+    => new()
+    {
+        Title = meeting.Title,
+        StartedAt = DateTimeOffset.Now,
+        Duration = TimeSpan.FromSeconds(3),
+        Configuration = new AudioConfiguration(),
+        MicrophonePath = microphonePath,
+        SystemAudioPath = systemPath,
+        SessionDirectory = Path.GetDirectoryName(microphonePath)
+    };
+
+static string VietnameseNotes(bool actionItems, string? deadline)
+{
+    var task = actionItems
+        ? """[{"task":"Gửi biên bản","owner":null,"deadline":null}]"""
+        : "[]";
+    _ = deadline;
+    return $$"""
+    {
+      "title": "Họp sản phẩm",
+      "summary": "Cuộc họp bằng tiếng Việt, không thêm việc khi chưa được nói.",
+      "keyPoints": ["Giữ nguyên Rust, Kubernetes và Cloudflare R2."],
+      "decisions": [{"content": "Dùng Rust cho backend", "speaker": "Speaker A"}],
+      "actionItems": {{task}},
+      "deadlines": [],
+      "openQuestions": [],
+      "importantMoments": []
+    }
+    """;
+}
 
 static void WriteFloatWaveFile(string path, double durationSeconds = 1, int sampleRate = 48_000, int channels = 2)
 {
@@ -641,6 +877,109 @@ static bool IsPcm16Wave(byte[] payload)
     }
 
     return hasPcm16Format && hasAudioData;
+}
+
+sealed class FakeMeetingProviderHandler : HttpMessageHandler
+{
+    private int _polls;
+
+    public int Uploads { get; private set; }
+    public int Submits { get; private set; }
+    public int SummaryCalls { get; private set; }
+    public List<string> TranscriptBodies { get; } = [];
+    public List<string> SummaryBodies { get; } = [];
+    public List<int> UploadLengths { get; } = [];
+    public string UtteranceText { get; set; } = "Xin chào.";
+    public string SummaryJson { get; set; } = """{"title":"Notes","summary":"Noted.","keyPoints":[],"decisions":[],"actionItems":[],"deadlines":[],"openQuestions":[],"importantMoments":[]}""";
+    public int SummaryFailuresRemaining { get; set; }
+    public bool DelayFirstPoll { get; set; }
+    public bool SawApiKeyInBody { get; private set; }
+
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+        var bytes = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(cancellationToken);
+        var body = Encoding.UTF8.GetString(bytes);
+        if (body.Contains("assembly-test-key", StringComparison.Ordinal) || body.Contains("openai-test-key", StringComparison.Ordinal))
+            SawApiKeyInBody = true;
+
+        if (path == "/v2/upload")
+        {
+            Uploads++;
+            UploadLengths.Add(bytes.Length);
+            return Json("{\"upload_url\":\"https://cdn.assemblyai.com/upload/test-object\"}");
+        }
+
+        if (path == "/v2/transcript")
+        {
+            Submits++;
+            TranscriptBodies.Add(body);
+            return Json("{\"id\":\"job-new\",\"status\":\"queued\"}");
+        }
+
+        if (path.StartsWith("/v2/transcript/", StringComparison.Ordinal))
+        {
+            if (DelayFirstPoll && _polls++ == 0)
+            {
+                await Task.Delay(200, cancellationToken);
+                return Json("{\"id\":\"job-new\",\"status\":\"processing\"}");
+            }
+
+            var text = JsonSerializer.Serialize(UtteranceText);
+            var reply = $$"""
+            {
+              "id": "job-existing",
+              "status": "completed",
+              "language_code": "vi",
+              "speech_model_used": "universal-3-5-pro",
+              "audio_duration": 8.4,
+              "text": {{text}},
+              "utterances": [
+                {"speaker": "A", "text": {{text}}, "start": 320, "end": 6400, "confidence": 0.94},
+                {"speaker": "B", "text": "Đồng ý, giữ nguyên Rust, Kubernetes và Cloudflare R2.", "start": 8400, "end": 15700, "confidence": 0.91}
+              ]
+            }
+            """;
+            return Json(reply);
+        }
+
+        if (path == "/v1/responses")
+        {
+            SummaryCalls++;
+            SummaryBodies.Add(body);
+            if (SummaryFailuresRemaining > 0)
+            {
+                SummaryFailuresRemaining--;
+                return new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                {
+                    Content = new StringContent("{\"error\":{\"message\":\"summary failed\"}}", Encoding.UTF8, "application/json")
+                };
+            }
+
+            var notes = SummaryJson;
+            if (body.Contains("CHUNK-A-PARAGRAPH", StringComparison.Ordinal))
+                notes = ChunkNotes("Do A");
+            if (body.Contains("CHUNK-B-PARAGRAPH", StringComparison.Ordinal))
+                notes = ChunkNotes("Do B");
+            if (body.Contains("Merge these structured", StringComparison.Ordinal))
+                notes = """{"title":"Merged","summary":"Merged notes.","keyPoints":[],"decisions":[],"actionItems":[{"task":"Do A","owner":null,"deadline":null},{"task":"Do B","owner":"Speaker B","deadline":null}],"deadlines":[],"openQuestions":[],"importantMoments":[]}""";
+            return Json(JsonSerializer.Serialize(new { output_text = notes }));
+        }
+
+        if (path == "/v1/models")
+            return Json("{\"data\":[]}");
+
+        return new HttpResponseMessage(HttpStatusCode.NotFound);
+    }
+
+    private static string ChunkNotes(string task)
+        => $$"""{"title":"Part","summary":"Part notes.","keyPoints":[],"decisions":[],"actionItems":[{"task":"{{task}}","owner":null,"deadline":null}],"deadlines":[],"openQuestions":[],"importantMoments":[]}""";
+
+    private static HttpResponseMessage Json(string json)
+        => new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
 }
 
 sealed class FakeOpenAiHandler : HttpMessageHandler

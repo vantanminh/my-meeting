@@ -90,6 +90,7 @@ public sealed partial class MainViewModel
     public ICommand SetSettingsSectionCommand { get; private set; } = null!;
     public ICommand TogglePasswordVisibilityCommand { get; private set; } = null!;
     public ICommand RemoveOpenAiKeyCommand { get; private set; } = null!;
+    public ICommand RemoveAssemblyAiKeyCommand { get; private set; } = null!;
     public ICommand ResetWorkspaceCommand { get; private set; } = null!;
     public ICommand AssignSpeakerCommand { get; private set; } = null!;
 
@@ -313,6 +314,7 @@ public sealed partial class MainViewModel
         SetSettingsSectionCommand = new RelayCommand(parameter => SelectedSettingsSection = parameter as string ?? "Account");
         TogglePasswordVisibilityCommand = new RelayCommand(_ => IsPasswordVisible = !IsPasswordVisible);
         RemoveOpenAiKeyCommand = new RelayCommand(_ => RemoveOpenAiKey());
+        RemoveAssemblyAiKeyCommand = new RelayCommand(_ => RemoveAssemblyAiKey());
         ResetWorkspaceCommand = new RelayCommand(parameter => ResetWorkspace(parameter as string));
         AssignSpeakerCommand = new RelayCommand(parameter => AssignSpeaker(parameter));
         _toastTimer.Tick += (_, _) =>
@@ -474,6 +476,12 @@ public sealed partial class MainViewModel
     {
         meeting.Summary.KeyPoints = KeyPointEditors.Select(item => item.Text.Trim()).Where(text => text.Length > 0).ToList();
         meeting.Summary.Decisions = DecisionEditors.Select(item => item.Text.Trim()).Where(text => text.Length > 0).ToList();
+        var previousDecisions = meeting.Summary.DecisionItems ?? [];
+        meeting.Summary.DecisionItems = meeting.Summary.Decisions.Select((text, index) => new DecisionItem
+        {
+            Content = text,
+            Speaker = index < previousDecisions.Count ? previousDecisions[index].Speaker : null
+        }).ToList();
         meeting.Summary.Questions = QuestionEditors.Select(item => item.Text.Trim()).Where(text => text.Length > 0).ToList();
         meeting.Summary.ImportantMoments = MomentEditors.Select(item => item.Text.Trim()).Where(text => text.Length > 0).ToList();
         meeting.Summary.ActionItems = ActionEditors.Select(item => item.ToItem()).ToList();
@@ -552,6 +560,10 @@ public sealed partial class MainViewModel
             ShowTimedToast("Summary refreshed from the current transcript");
         }
         catch (OpenAiServiceException exception)
+        {
+            ShowTimedToast(exception.Message);
+        }
+        catch (MeetingProcessingException exception)
         {
             ShowTimedToast(exception.Message);
         }
@@ -812,5 +824,14 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(OpenAiKeyStatus));
         OnPropertyChanged(nameof(OpenAiProviderLabel));
         ShowTimedToast("OpenAI key removed from this Windows profile");
+    }
+
+    private void RemoveAssemblyAiKey()
+    {
+        _assemblyAi.ClearScopedApiKey();
+        AssemblyAiApiKeyInput = string.Empty;
+        OnPropertyChanged(nameof(AssemblyAiKeyStatus));
+        OnPropertyChanged(nameof(OpenAiProviderLabel));
+        ShowTimedToast("AssemblyAI key removed from this Windows profile");
     }
 }

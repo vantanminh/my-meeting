@@ -469,6 +469,12 @@ public partial class MainWindow : Window
             viewModel.OpenAiApiKeyInput = passwordBox.Password;
     }
 
+    private void AssemblyAiApiKeyBox_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel viewModel && sender is System.Windows.Controls.PasswordBox passwordBox)
+            viewModel.AssemblyAiApiKeyInput = passwordBox.Password;
+    }
+
     private void TranscriptTimestamp_Click(object sender, MouseButtonEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: MeetingAssistant.Models.TranscriptSegment segment })
