@@ -280,8 +280,8 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
         {
             model = _configuration.SummaryModel,
             store = false,
-            instructions = "Bạn là trợ lý ghi chép cuộc họp. Trả về đúng một JSON object, không markdown, với các field: overview (string), keyPoints (array of strings), decisions (array of strings), actionItems (array of objects gồm text, owner, due, isComplete), deadlines (array of objects gồm label, date, owner), questions (array of strings), importantMoments (array of strings). Viết bằng ngôn ngữ chính của transcript; nêu rõ khi thông tin chưa xác định.",
-            input = $"Tên cuộc họp: {recording.Title}\n\nTranscript:\n{transcriptText}",
+            instructions = "Bạn là trợ lý ghi chép cuộc họp. Trả về đúng một json object, không markdown, với các field: overview (string), keyPoints (array of strings), decisions (array of strings), actionItems (array of objects gồm text, owner, due, isComplete), deadlines (array of objects gồm label, date, owner), questions (array of strings), importantMoments (array of strings). Viết bằng ngôn ngữ chính của transcript; nêu rõ khi thông tin chưa xác định.",
+            input = $"Respond in json.\n\nTên cuộc họp: {recording.Title}\n\nTranscript:\n{transcriptText}",
             text = new { format = new { type = "json_object" } }
         };
 
