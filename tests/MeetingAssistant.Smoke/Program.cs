@@ -279,6 +279,8 @@ try
         if (openAiProcessed.Meeting.Transcript.Count != 2) failures.Add("OpenAI adapter should merge both audio tracks");
         if (openAiProcessed.Meeting.Summary.ActionItems.Count != 1) failures.Add("OpenAI adapter should parse a structured summary");
         if (openAiProcessed.Meeting.Status != MeetingStatus.Ready) failures.Add("OpenAI adapter should return a ready meeting");
+        if (fakeHttpHandler.SummaryBodies.Count == 0 || fakeHttpHandler.SummaryBodies.Any(body => !SummaryInputContainsJson(body)))
+            failures.Add("OpenAI json_object summaries must include the word json in the input message");
         if (fakeHttpHandler.AudioPayloads.Count != 2 || fakeHttpHandler.AudioPayloads.Any(payload => !IsPcm16Wave(payload)))
             failures.Add("OpenAI adapter should normalize float WAV tracks to valid PCM16 WAV uploads");
         if (fakeHttpHandler.TranscriptionBodies.Count == 0
@@ -882,6 +884,21 @@ static string VietnameseNotes(bool actionItems, string? deadline)
     """;
 }
 
+static bool SummaryInputContainsJson(string body)
+{
+    try
+    {
+        using var document = JsonDocument.Parse(body);
+        if (!document.RootElement.TryGetProperty("input", out var input) || input.ValueKind != JsonValueKind.String)
+            return false;
+        return input.GetString()?.Contains("json", StringComparison.Ordinal) == true;
+    }
+    catch (JsonException)
+    {
+        return false;
+    }
+}
+
 static void WriteFloatWaveFile(string path, double durationSeconds = 1, int sampleRate = 48_000, int channels = 2)
 {
     var format = WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, channels);
@@ -1044,6 +1061,7 @@ sealed class FakeOpenAiHandler : HttpMessageHandler
     public string? LastAuthorization { get; private set; }
     public List<byte[]> AudioPayloads { get; } = [];
     public List<string> TranscriptionBodies { get; } = [];
+    public List<string> SummaryBodies { get; } = [];
     public HttpStatusCode TranscriptionStatus { get; set; } = HttpStatusCode.OK;
     public string? TranscriptionErrorJson { get; set; }
 
@@ -1081,6 +1099,7 @@ sealed class FakeOpenAiHandler : HttpMessageHandler
 
         if (request.RequestUri?.AbsolutePath == "/v1/responses")
         {
+            SummaryBodies.Add(await request.Content!.ReadAsStringAsync(cancellationToken));
             var summary = JsonSerializer.Serialize(new
             {
                 overview = "A concise smoke-test summary.",
