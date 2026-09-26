@@ -347,7 +347,7 @@ public sealed partial class MainViewModel
             "Meeting Assistant",
             IsRecording
                 ? "A recording is still active. Stop and keep the audio before closing?"
-                : "Processing is still running. Close anyway? Your audio stays on this device.");
+                : "Processing is still running. Exit anyway? Processing stops, your audio stays on this device and you can retry later.");
         _isConfirmingClose = false;
         return accepted;
     }
@@ -360,6 +360,7 @@ public sealed partial class MainViewModel
     internal void BindWorkspaceAfterConstruction()
     {
         InitializeWorkspaceCommands();
+        InitializeBackgroundState();
         _greetingPrefix = GreetingCopy.TimeOfDay(DateTimeOffset.Now);
         AppPaths.SetRecordingsDirectory(_savedPreferences.RecordingsDirectory);
         SelectedUpdatePolicy = _savedPreferences.UpdatePolicy.ToString();

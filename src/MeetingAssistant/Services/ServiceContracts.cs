@@ -104,10 +104,27 @@ public interface IGlobalHotkeyService : IDisposable
     void Attach(Window window);
 }
 
+public enum TrayState
+{
+    Idle,
+    Recording,
+    Processing,
+    Failed
+}
+
+public sealed class TrayActions
+{
+    public required Action ShowWindow { get; init; }
+    public required Action ToggleFlyout { get; init; }
+    public required Action ToggleRecording { get; init; }
+    public required Action Exit { get; init; }
+}
+
 public interface ITrayService : IDisposable
 {
-    void Initialize(Action showWindow, Action toggleRecording);
-    void SetRecordingState(bool isRecording, TimeSpan elapsed);
+    void Initialize(TrayActions actions);
+    void UpdateStatus(TrayState state, string tooltip);
+    void ShowNotification(string title, string message, bool isError = false);
 }
 
 public interface IUserPrompt
