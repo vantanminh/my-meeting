@@ -69,6 +69,7 @@ public sealed partial class MainViewModel
     public ICommand ArchiveMeetingCommand { get; private set; } = null!;
     public ICommand ExportMeetingCommand { get; private set; } = null!;
     public AsyncRelayCommand ResummarizeCommand { get; private set; } = null!;
+    public AsyncRelayCommand ScanRecordingsCommand { get; private set; } = null!;
     public ICommand MergeSelectedSpeakersCommand { get; private set; } = null!;
     public ICommand OpenInboxMeetingCommand { get; private set; } = null!;
     public ICommand DismissToastCommand { get; private set; } = null!;
@@ -289,7 +290,8 @@ public sealed partial class MainViewModel
         DeleteMeetingCommand = new AsyncRelayCommand(DeleteCurrentMeetingAsync, () => CurrentMeeting is not null);
         ArchiveMeetingCommand = new AsyncRelayCommand(ArchiveCurrentMeetingAsync, () => CurrentMeeting is not null);
         ExportMeetingCommand = new AsyncRelayCommand(ExportCurrentMeetingAsync, () => CurrentMeeting is not null);
-        ResummarizeCommand = new AsyncRelayCommand(ResummarizeAsync, () => CurrentMeeting is not null && !IsProcessing);
+        ResummarizeCommand = new AsyncRelayCommand(ResummarizeAsync, () => CurrentMeeting is not null && !IsMeetingBusy(CurrentMeeting.Id));
+        ScanRecordingsCommand = new AsyncRelayCommand(ScanRecordingsAsync, () => !IsLoadingMeetings);
         MergeSelectedSpeakersCommand = new AsyncRelayCommand(MergeSpeakersAsync, () => SpeakerEditors.Count >= 2);
         OpenInboxMeetingCommand = new RelayCommand(parameter =>
         {
@@ -345,9 +347,9 @@ public sealed partial class MainViewModel
         _isConfirmingClose = true;
         var accepted = _prompt.Confirm(
             "Meeting Assistant",
-            IsRecording
+            LocalizationService.Translate(IsRecording
                 ? "A recording is still active. Stop and keep the audio before closing?"
-                : "Processing is still running. Close anyway? Your audio stays on this device.");
+                : "Processing is still running. Close anyway? The recording stays on this computer and you can process it again from the meeting list."));
         _isConfirmingClose = false;
         return accepted;
     }
@@ -431,11 +433,12 @@ public sealed partial class MainViewModel
         ProcessingSteps.Clear();
         foreach (var (index, label) in new (int, string)[]
         {
-            (0, "Audio tracks prepared"),
-            (1, "Transcript with timestamps"),
-            (2, "Speaker turns identified"),
-            (3, "Summary and action items"),
-            (4, "Saved to your local workspace")
+            (0, "Recording saved"),
+            (1, "Audio prepared"),
+            (2, "Uploading and transcribing"),
+            (3, "Transcript saved"),
+            (4, "Writing meeting notes"),
+            (5, "Meeting saved")
         })
         {
             ProcessingSteps.Add(new ProcessingStepViewModel(index, label));

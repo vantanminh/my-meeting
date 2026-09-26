@@ -18,7 +18,7 @@ before it enters domain code.
 
 ## Meeting transcription and notes
 
-Stopping a recording finalizes the local WAV tracks, then `MeetingProcessingService` runs one resumable pass on that meeting: queued, transcribing, summarizing, completed, or failed. AssemblyAI is the default speech-to-text adapter behind `ITranscriptionService`. OpenAI summarization uses the Responses API with a strict meeting-notes schema. A saved transcript is not submitted again when only the summary needs to be retried, and a completed meeting is left as-is.
+Stopping a recording finalizes the local WAV tracks and saves the meeting immediately, then a single background worker runs `MeetingProcessingService` for that meeting: queued, transcribing, summarizing, completed, or failed. The meeting list and the Record action stay available, so another capture can start while notes are still being written. Progress is a sequence of real stages (recording saved, audio prepared, uploading and transcribing, transcript saved, writing notes, meeting saved) with elapsed time, not a synthetic percent. AssemblyAI is the default speech-to-text adapter behind `ITranscriptionService`. OpenAI summarization uses the Responses API with a strict meeting-notes schema. A saved transcript is not submitted again when only the summary needs to be retried. A meeting left in queued, transcribing, or summarizing is marked retryable on the next launch, and the saved transcript is kept. Folders under the recordings directory that contain a usable `microphone.wav` or `system-audio.wav` but no meeting row are added back by startup recovery and by Scan recordings.
 
 ## Audio capture and transcription boundary
 

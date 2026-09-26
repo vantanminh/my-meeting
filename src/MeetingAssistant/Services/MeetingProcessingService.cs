@@ -90,7 +90,7 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
         {
             if (IsFinished(meeting))
             {
-                Report(progress, 100, 4, "Generating meeting notes...", "Generating meeting notes...");
+                Report(progress, 100, 5, "Meeting saved", "The transcript and meeting notes are already stored on this computer.");
                 return new ProcessingResult(meeting);
             }
 
@@ -134,7 +134,7 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
                 meeting.ProcessingPhase = ProcessingPhase.Queued;
                 meeting.ProcessingError = null;
                 await PersistAsync(request, cancellationToken);
-                Report(progress, 10, 0, "Processing recording...", "Processing recording...");
+                Report(progress, 8, 0, "Recording saved", "The audio files are on this computer. Preparing them for transcription.");
                 MeetingProcessingLog.Write("meeting_transcription_started", meeting.Id, "assemblyai", "started", null, null);
 
                 using var prepared = MeetingAudioPreparation.Prepare(request.Recording, cancellationToken);
@@ -142,7 +142,8 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
                 EnsureStillThere(request);
                 meeting.ProcessingPhase = ProcessingPhase.Transcribing;
                 await PersistAsync(request, cancellationToken);
-                Report(progress, 40, 1, "Transcribing meeting...", "Transcribing meeting...");
+                Report(progress, 24, 1, "Audio prepared", "Microphone and system audio are mixed. Uploading the recording.");
+                Report(progress, 36, 2, "Uploading recording", "Sending the finished recording. Transcription starts after the upload, not while you were talking.");
 
                 var transcriptionStarted = Stopwatch.StartNew();
                 var transcript = await _transcription.TranscribeAsync(new TranscriptionRequest
@@ -156,11 +157,12 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
                         meeting.TranscriptionProvider = "assemblyai";
                         meeting.ProcessingPhase = ProcessingPhase.Transcribing;
                         await PersistAsync(request, token);
+                        Report(progress, 52, 2, "Transcribing meeting", "Transcription is running. Speaker labels and timestamps are added when it finishes.");
                     }
                 }, cancellationToken);
 
                 ApplyTranscript(meeting, transcript, transcriptionStarted.Elapsed);
-                Report(progress, 55, 2, "Transcribing meeting...", "Transcribing meeting...");
+                Report(progress, 68, 3, "Transcript saved", "Speaker turns are saved. Writing the meeting notes next.");
                 await PersistAsync(request, cancellationToken);
                 MeetingProcessingLog.Write(
                     "meeting_transcription_completed",
@@ -175,7 +177,7 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
             meeting.ProcessingPhase = ProcessingPhase.Summarizing;
             meeting.Status = MeetingStatus.Processing;
             await PersistAsync(request, cancellationToken);
-            Report(progress, 80, 3, "Generating meeting notes...", "Generating meeting notes...");
+            Report(progress, 82, 4, "Writing meeting notes", "Creating the overview, key points, decisions, action items, and open questions from the transcript.");
             MeetingProcessingLog.Write("meeting_summary_started", meeting.Id, "openai", "started", null, null);
             var summaryStarted = Stopwatch.StartNew();
             var notes = await _summary.SummarizeAsync(
@@ -191,7 +193,7 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
             meeting.UpdatedAt = DateTimeOffset.Now;
             await PersistAsync(request, cancellationToken);
             MeetingProcessingLog.Write("meeting_summary_completed", meeting.Id, "openai", "completed", summaryStarted.Elapsed, null);
-            Report(progress, 100, 4, "Generating meeting notes...", "Generating meeting notes...");
+            Report(progress, 100, 5, "Meeting saved", "The transcript and meeting notes are stored on this computer.");
             return new ProcessingResult(meeting);
         }
         catch (OperationCanceledException)
@@ -220,7 +222,7 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
         {
             if (meeting.Transcript.Count == 0)
             {
-                Report(progress, 10, 0, "Processing recording...", "Processing recording...");
+                Report(progress, 10, 0, "Recording saved", "The audio files are on this computer. Preparing them for transcription.");
                 var quiet = new Progress<ProcessingProgress>(value =>
                     progress.Report(value with { ShowPercent = false }));
                 var result = await _openAiIntelligence.ProcessAsync(request.Recording, quiet, cancellationToken);
@@ -231,11 +233,11 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
                 meeting.ProcessingError = null;
                 meeting.ProcessedAt = DateTimeOffset.Now;
                 await PersistAsync(request, cancellationToken);
-                Report(progress, 100, 4, "Generating meeting notes...", "Generating meeting notes...");
+                Report(progress, 100, 5, "Meeting saved", "The transcript and meeting notes are stored on this computer.");
                 return new ProcessingResult(meeting);
             }
 
-            Report(progress, 80, 3, "Generating meeting notes...", "Generating meeting notes...");
+            Report(progress, 82, 4, "Writing meeting notes", "Creating the overview, key points, decisions, action items, and open questions from the transcript.");
             meeting.Summary = await _openAiIntelligence.SummarizeAsync(meeting, cancellationToken);
             meeting.Summary.EnsureCollections();
             meeting.ProcessingPhase = ProcessingPhase.Completed;
@@ -244,7 +246,7 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
             meeting.SummarizedAt = DateTimeOffset.Now;
             meeting.ProcessedAt = DateTimeOffset.Now;
             await PersistAsync(request, cancellationToken);
-            Report(progress, 100, 4, "Generating meeting notes...", "Generating meeting notes...");
+            Report(progress, 100, 5, "Meeting saved", "The transcript and meeting notes are stored on this computer.");
             return new ProcessingResult(meeting);
         }
         catch (OperationCanceledException)
@@ -344,7 +346,7 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
     private static bool IsFinished(Meeting meeting)
         => meeting.ProcessingPhase == ProcessingPhase.Completed
             && meeting.Transcript.Count > 0
-            && meeting.Summary is not null;
+            && !string.IsNullOrWhiteSpace(meeting.Summary?.Overview);
 
     private static void EnsureStillThere(MeetingProcessingRequest request)
     {

@@ -80,6 +80,8 @@ MEETING_ASSISTANT_OPENAI_TRANSCRIPTION_LANGUAGE
 
 `MEETING_TRANSCRIPTION_PROVIDER=openai` keeps the previous OpenAI file-transcription path. A real WASAPI recording is reopened and converted to provider-compatible mono 16 kHz PCM16 WAV files before upload. Empty loopback tracks are skipped when another track is valid. The original local recording remains available when processing fails, so `Retry` never loses the capture.
 
+Processing runs in the background after Stop. The meeting row is saved before transcription starts, and Record stays available for the next meeting. If the app closes mid-processing, the next launch marks that meeting as needing retry and keeps any transcript already saved. Use **Scan recordings** on the meetings list to bring back a WAV folder that never received a meeting row. Open the recovered meeting and choose Retry.
+
 For a development run, the minimum setup is:
 
 ```powershell

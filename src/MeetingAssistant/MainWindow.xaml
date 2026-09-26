@@ -259,6 +259,42 @@
                 <DataTrigger Binding="{Binding MeetingNeedsRetry}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
             </Style.Triggers>
         </Style>
+        <Style x:Key="BackgroundProcessingSurface" TargetType="Border">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsProcessing}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="BackgroundProcessingChip" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsProcessing}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="ActiveProcessingSurface" TargetType="Border" BasedOn="{StaticResource CardStyle}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsViewingActiveProcessing}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="MissingNotesSurface" TargetType="TextBlock">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding ShowMissingNotes}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="WaitingToProcessSurface" TargetType="Border">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding ShowWaitingToProcess}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="MeetingNotesDigestSurface" TargetType="TextBlock">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasMeetingNotes}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+            </Style.Triggers>
+        </Style>
         <Style x:Key="ProcessingErrorSurface" TargetType="Grid">
             <Setter Property="Visibility" Value="Collapsed" />
             <Style.Triggers>
@@ -529,6 +565,12 @@
                                     </Grid>
                                 </Border>
                             </Grid>
+                            <Button x:Name="BackgroundProcessingButton" Style="{StaticResource BackgroundProcessingChip}" Command="{Binding OpenActiveProcessingCommand}" Margin="0,0,12,0" MaxWidth="280" Height="38" Padding="12,6" ToolTip="View progress">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding BackgroundProcessingLabel}" FontSize="11" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding ProcessingElapsedLabel}" FontSize="10" Foreground="{DynamicResource GoldBrush}" />
+                                </StackPanel>
+                            </Button>
                             <Button x:Name="RecordHeaderButton" ToolTip="New recording" AutomationProperties.Name="New recording" Style="{StaticResource NotRecording}" Command="{Binding OpenSetupCommand}" Height="38" Padding="15,8">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="+" FontSize="17" FontWeight="SemiBold" Margin="0,-2,7,0" />
@@ -646,9 +688,31 @@
                                     </Border>
                                 </Grid>
 
+                                <Border Style="{StaticResource BackgroundProcessingSurface}" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="14" Padding="18" Margin="0,0,0,18">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Margin="0,0,16,0">
+                                            <TextBlock Text="PROCESSING IN THE BACKGROUND" Style="{StaticResource SectionLabel}" />
+                                            <TextBlock Text="{Binding BackgroundProcessingLabel}" FontSize="15" FontWeight="SemiBold" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding ProcessingMessage}" FontSize="12" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                                <TextBlock Text="Elapsed" FontSize="11" Foreground="{DynamicResource GoldBrush}" />
+                                                <TextBlock Text="{Binding ProcessingElapsedLabel}" FontSize="11" Foreground="{DynamicResource GoldBrush}" Margin="6,0,0,0" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button Style="{StaticResource GhostButton}" Command="{Binding CancelProcessingCommand}" Content="Pause" FontSize="11" Margin="0,0,8,0" />
+                                            <Button Style="{StaticResource SecondaryButton}" Command="{Binding OpenActiveProcessingCommand}" Content="View progress" FontSize="11" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
                                 <Grid Margin="0,0,0,13">
                                     <TextBlock Text="Recent meetings" FontSize="18" FontWeight="SemiBold" />
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <Button Style="{StaticResource GhostButton}" Command="{Binding ScanRecordingsCommand}" Content="Scan recordings" FontSize="11" Margin="0,0,8,0" VerticalAlignment="Center" />
                                         <ItemsControl ItemsSource="{Binding HubFilterOptions}">
                                             <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                                             <ItemsControl.ItemTemplate>
@@ -689,7 +753,7 @@
                                                                 <TextBlock Text="  ·  " FontSize="11" Foreground="{DynamicResource SubtleBrush}" />
                                                                 <TextBlock Text="{Binding DurationLabel}" FontSize="11" Foreground="{DynamicResource MutedBrush}" />
                                                                 <TextBlock Text="  ·  " FontSize="11" Foreground="{DynamicResource SubtleBrush}" />
-                                                                <TextBlock Text="{Binding StatusLabel}" FontSize="11" Foreground="{DynamicResource BlueBrush}" />
+                                                                <TextBlock Text="{Binding StatusLabel, Converter={StaticResource LocalizedTextConverter}}" FontSize="11" Foreground="{DynamicResource BlueBrush}" />
                                                                 <TextBlock Text="  ·  " FontSize="11" Foreground="{DynamicResource SubtleBrush}" />
                                                                 <TextBlock Text="{Binding ParticipantCount, StringFormat={}{0} speakers}" FontSize="11" Foreground="{DynamicResource MutedBrush}" />
                                                             </WrapPanel>
@@ -1058,30 +1122,53 @@
                                         </ListView>
                                     </StackPanel>
                                     <StackPanel x:Name="SummaryColumn" Grid.Row="0" Grid.Column="1" Margin="10,0,0,0">
-                                        <Grid Margin="0,0,0,12">
+                                        <Grid Margin="0,0,0,8">
                                             <TextBlock Text="Summary" FontSize="18" FontWeight="SemiBold" />
                                             <Button Style="{StaticResource GhostButton}" Command="{Binding ResummarizeCommand}" Content="Refresh summary" FontSize="10" HorizontalAlignment="Right" />
                                         </Grid>
-                                        <Border Style="{StaticResource CardStyle}" Padding="17" Margin="0,0,0,10">
+                                        <TextBlock Text="{Binding MeetingNotesSummary}" Style="{StaticResource MeetingNotesDigestSurface}" FontSize="12" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,12" />
+                                        <Border Style="{StaticResource WaitingToProcessSurface}" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="14" Padding="17" Margin="0,0,0,10">
                                             <StackPanel>
-                                                <TextBlock Text="AUDIO" Style="{StaticResource SectionLabel}" />
-                                                <ComboBox ItemsSource="{Binding AudioSourceOptions}" SelectedItem="{Binding SelectedAudioSource}" Margin="0,10,0,8" />
-                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                                    <Button Style="{StaticResource SecondaryButton}" Command="{Binding PlayAudioCommand}" Content="Play" FontSize="10" Margin="0,0,6,0" />
-                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding PauseAudioCommand}" Content="Pause" FontSize="10" Margin="0,0,6,0" />
-                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding SkipBackCommand}" Content="−5s" FontSize="10" Margin="0,0,6,0" />
-                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding SkipForwardCommand}" Content="+5s" FontSize="10" />
-                                                </StackPanel>
-                                                <ComboBox ItemsSource="{Binding PlaybackSpeedOptions}" SelectedItem="{Binding PlaybackSpeedLabel}" Margin="0,0,0,8" />
-                                                <TextBlock Text="{Binding PlaybackStatus}" FontSize="10" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" />
-                                                <TextBlock Text="{Binding PlaybackPosition, StringFormat=Seek {0:0}s}" FontSize="10" Foreground="{DynamicResource BlueBrush}" Margin="0,6,0,0" />
-                                                <Button Style="{StaticResource GhostButton}" Command="{Binding RevealAudioFolderCommand}" Content="Reveal audio folder" FontSize="10" HorizontalAlignment="Left" Margin="0,6,0,0" />
+                                                <TextBlock Text="WAITING TO PROCESS" Style="{StaticResource SectionLabel}" />
+                                                <TextBlock Text="This recording is saved and waiting for its turn. You can start another recording." FontSize="12" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Style="{StaticResource ActiveProcessingSurface}" Padding="17" Margin="0,0,0,10">
+                                            <StackPanel>
+                                                <Grid>
+                                                    <TextBlock Text="PROCESSING" Style="{StaticResource SectionLabel}" />
+                                                    <TextBlock Text="{Binding ProcessingElapsedLabel}" HorizontalAlignment="Right" FontSize="12" Foreground="{DynamicResource GoldBrush}" />
+                                                </Grid>
+                                                <TextBlock Text="{Binding ProcessingStage}" FontSize="14" FontWeight="SemiBold" Margin="0,10,0,0" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding ProcessingMessage}" FontSize="12" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,12" />
+                                                <ItemsControl ItemsSource="{Binding ProcessingSteps}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Grid Margin="0,0,0,8">
+                                                                <Grid.ColumnDefinitions><ColumnDefinition Width="20" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                                <Ellipse Width="9" Height="9" VerticalAlignment="Center">
+                                                                    <Ellipse.Style>
+                                                                        <Style TargetType="Ellipse">
+                                                                            <Setter Property="Fill" Value="{DynamicResource SubtleBrush}" />
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding State}" Value="Done"><Setter Property="Fill" Value="{DynamicResource MintBrush}" /></DataTrigger>
+                                                                                <DataTrigger Binding="{Binding State}" Value="Current"><Setter Property="Fill" Value="{DynamicResource GoldBrush}" /></DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </Ellipse.Style>
+                                                                </Ellipse>
+                                                                <TextBlock Grid.Column="1" Text="{Binding Label, Converter={StaticResource LocalizedTextConverter}}" FontSize="11" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" />
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
                                             </StackPanel>
                                         </Border>
                                         <Border Style="{StaticResource CardStyle}" Padding="17" Margin="0,0,0,10">
                                             <StackPanel>
                                                 <TextBlock Text="OVERVIEW" Style="{StaticResource SectionLabel}" />
-                                                <TextBox Text="{Binding CurrentMeeting.Summary.Overview, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" AcceptsReturn="True" Background="Transparent" BorderThickness="0" Padding="0" FontSize="12" Foreground="{DynamicResource EditorTextBrush}" MinHeight="90" Margin="0,12,0,0" />
+                                                <TextBlock Text="{Binding MeetingNotesSummary}" Style="{StaticResource MissingNotesSurface}" FontSize="12" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,12,0,0" />
+                                                <TextBox Text="{Binding CurrentMeeting.Summary.Overview, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" AcceptsReturn="True" Background="Transparent" BorderThickness="0" Padding="0" FontSize="12" Foreground="{DynamicResource EditorTextBrush}" MinHeight="72" Margin="0,12,0,0" />
                                             </StackPanel>
                                         </Border>
                                         <Border Style="{StaticResource CardStyle}" Padding="17" Margin="0,0,0,10">
@@ -1137,7 +1224,7 @@
                                                 </ItemsControl>
                                             </StackPanel>
                                         </Border>
-                                        <Border Style="{StaticResource CardStyle}" Padding="17">
+                                        <Border Style="{StaticResource CardStyle}" Padding="17" Margin="0,0,0,10">
                                             <StackPanel>
                                                 <Grid>
                                                     <TextBlock Text="QUESTIONS TO CARRY" Style="{StaticResource SectionLabel}" />
@@ -1157,12 +1244,28 @@
                                                 <ItemsControl ItemsSource="{Binding MomentEditors}" Margin="0,11,0,0">
                                                     <ItemsControl.ItemTemplate><DataTemplate><TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" Background="Transparent" BorderThickness="0" Padding="0" FontSize="11" Foreground="{DynamicResource GoldBrush}" Margin="0,0,0,8" /></DataTemplate></ItemsControl.ItemTemplate>
                                                 </ItemsControl>
-                                        <Border Style="{StaticResource CardStyle}" Padding="17" Margin="0,10,0,0">
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Style="{StaticResource CardStyle}" Padding="17" Margin="0,0,0,10">
                                             <StackPanel>
                                                 <TextBlock Text="NOTES" Style="{StaticResource SectionLabel}" />
                                                 <TextBox Text="{Binding CurrentMeeting.Notes, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" AcceptsReturn="True" Background="Transparent" BorderThickness="0" Padding="0" FontSize="12" Foreground="{DynamicResource EditorTextBrush}" MinHeight="64" Margin="0,12,0,0" />
                                             </StackPanel>
                                         </Border>
+                                        <Border Style="{StaticResource CardStyle}" Padding="17" Margin="0,0,0,10">
+                                            <StackPanel>
+                                                <TextBlock Text="AUDIO" Style="{StaticResource SectionLabel}" />
+                                                <ComboBox ItemsSource="{Binding AudioSourceOptions}" SelectedItem="{Binding SelectedAudioSource}" Margin="0,10,0,8" />
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                    <Button Style="{StaticResource SecondaryButton}" Command="{Binding PlayAudioCommand}" Content="Play" FontSize="10" Margin="0,0,6,0" />
+                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding PauseAudioCommand}" Content="Pause" FontSize="10" Margin="0,0,6,0" />
+                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding SkipBackCommand}" Content="−5s" FontSize="10" Margin="0,0,6,0" />
+                                                    <Button Style="{StaticResource GhostButton}" Command="{Binding SkipForwardCommand}" Content="+5s" FontSize="10" />
+                                                </StackPanel>
+                                                <ComboBox ItemsSource="{Binding PlaybackSpeedOptions}" SelectedItem="{Binding PlaybackSpeedLabel}" Margin="0,0,0,8" />
+                                                <TextBlock Text="{Binding PlaybackStatus}" FontSize="10" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding PlaybackPosition, StringFormat=Seek {0:0}s}" FontSize="10" Foreground="{DynamicResource BlueBrush}" Margin="0,6,0,0" />
+                                                <Button Style="{StaticResource GhostButton}" Command="{Binding RevealAudioFolderCommand}" Content="Reveal audio folder" FontSize="10" HorizontalAlignment="Left" Margin="0,6,0,0" />
                                             </StackPanel>
                                         </Border>
                                     </StackPanel>
