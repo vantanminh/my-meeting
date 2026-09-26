@@ -49,7 +49,7 @@ public partial class MainWindow : Window
     }
 
     private void ApplyNativeChrome()
-        => NativeWindowChrome.Apply(this, ThemeService.CurrentMode == ThemeMode.Dark);
+        => NativeWindowChrome.Apply(this, ThemeService.IsDark);
 
     private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
     {
