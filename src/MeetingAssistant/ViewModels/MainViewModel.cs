@@ -166,7 +166,7 @@ public sealed partial class MainViewModel : ViewModelBase
         _updateStatus = _updates.Configuration.IsConfigured
             ? "Updates are ready to check."
             : "Updates are not configured for this build.";
-        _selectedTheme = ThemeService.Parse(_savedPreferences.Theme).ToString();
+        _selectedTheme = ThemeService.DisplayName(ThemeService.Parse(_savedPreferences.Theme));
         _selectedLanguage = string.Equals(_savedPreferences.Language, "en", StringComparison.OrdinalIgnoreCase) ? "English" : "Tiếng Việt";
         _retentionOption = _savedPreferences.RetentionOption;
         _keepLocalCopy = _savedPreferences.KeepLocalCopy;
@@ -201,7 +201,7 @@ public sealed partial class MainViewModel : ViewModelBase
         SystemAudioOptions = ["Default system audio"];
         QualityOptions = ["Balanced · 48 kHz", "High quality · 48 kHz", "Compact · 16 kHz"];
         RetentionOptions = ["Keep recordings for 7 days", "Keep recordings for 30 days", "Keep recordings until deleted"];
-        ThemeOptions = ["Ink", "Harbor", "Dusk", "Paper", "Moss", "Amber"];
+        ThemeOptions = ["Dark", "Light"];
         OpenAiTranscriptionModelOptions = ["gpt-4o-transcribe", "gpt-4o-mini-transcribe", "gpt-transcribe", "gpt-4o-transcribe-diarize", "whisper-1"];
         OpenAiSummaryModelOptions = ["gpt-6-luna", "gpt-4.1-mini", "gpt-4o-mini", "gpt-4o"];
         LanguageOptions = ["Tiếng Việt", "English"];
@@ -487,8 +487,10 @@ public sealed partial class MainViewModel : ViewModelBase
         get => _selectedTheme;
         set
         {
-            if (!SetProperty(ref _selectedTheme, value)) return;
-            ThemeService.Apply(ThemeService.Parse(value));
+            var mode = ThemeService.Parse(value);
+            var display = ThemeService.DisplayName(mode);
+            ThemeService.Apply(mode);
+            SetProperty(ref _selectedTheme, display);
         }
     }
     public string SelectedLanguage

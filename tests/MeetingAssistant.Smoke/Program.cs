@@ -25,6 +25,27 @@ try
     var greeting = GreetingCopy.TimeOfDay(DateTimeOffset.Now);
     if (greeting is not ("Good morning, " or "Good afternoon, " or "Good evening, "))
         failures.Add("greeting should follow the time of day");
+    if (ThemeService.Parse("Dark") != ThemeMode.Dark
+        || ThemeService.Parse("Ink") != ThemeMode.Dark
+        || ThemeService.Parse("Harbor") != ThemeMode.Dark
+        || ThemeService.Parse("Dusk") != ThemeMode.Dark)
+        failures.Add("dark theme names should resolve to Dark");
+    if (ThemeService.Parse("Light") != ThemeMode.Light
+        || ThemeService.Parse("Paper") != ThemeMode.Light
+        || ThemeService.Parse("Moss") != ThemeMode.Light
+        || ThemeService.Parse("Amber") != ThemeMode.Light)
+        failures.Add("light theme names should resolve to Light");
+    if (viewModel.ThemeOptions.Count != 2 || viewModel.SelectedTheme != "Dark" || !ThemeService.IsDark)
+        failures.Add("settings should offer Dark and Light, with Dark selected by default");
+    viewModel.SelectedTheme = "Light";
+    if (viewModel.SelectedTheme != "Light" || ThemeService.IsDark || ThemeService.CurrentMode != ThemeMode.Light)
+        failures.Add("choosing Light should apply the light theme immediately");
+    viewModel.SelectedTheme = "Paper";
+    if (viewModel.SelectedTheme != "Light" || ThemeService.CurrentMode != ThemeMode.Light)
+        failures.Add("a saved light palette should stay on the Light theme");
+    viewModel.SelectedTheme = "Dark";
+    if (viewModel.SelectedTheme != "Dark" || !ThemeService.IsDark)
+        failures.Add("choosing Dark should restore the dark theme immediately");
     viewModel.Dispose();
 
     var storedMeetings = await services.MeetingRepository.LoadAsync();
