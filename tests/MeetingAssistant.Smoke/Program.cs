@@ -416,6 +416,12 @@ try
         failures.Add("OpenAI settings should persist trimmed values and reload them from the user environment");
     }
 
+    // SaveUserEnvironment also copies the values into this process. The pipeline
+    // checks below pass an explicit gpt-6-luna override and must not inherit them.
+    Environment.SetEnvironmentVariable(OpenAiConfiguration.ScopedApiKeyEnvironmentVariable, null);
+    Environment.SetEnvironmentVariable(OpenAiConfiguration.TranscriptionModelEnvironmentVariable, null);
+    Environment.SetEnvironmentVariable(OpenAiConfiguration.SummaryModelEnvironmentVariable, null);
+
     using (var hangingHttpClient = new HttpClient(new HangingOpenAiHandler()))
     {
         var hangingOpenAi = new OpenAiMeetingIntelligenceService(
@@ -734,7 +740,10 @@ static async Task RunMeetingPipelineSmokeAsync(List<string> failures)
 
         var chunkHandler = new FakeMeetingProviderHandler();
         using var chunkHttp = new HttpClient(chunkHandler);
-        var chunkSummary = new MeetingSummaryService(new OpenAiConfiguration("openai-test-key", summaryModelOverride: "gpt-6-luna"), chunkHttp, inputTokenBudget: 80);
+        var chunkSummary = new MeetingSummaryService(
+            new OpenAiConfiguration("openai-test-key", summaryModelOverride: "gpt-6-luna", userEnvironment: new InMemoryUserEnvironmentStore()),
+            chunkHttp,
+            inputTokenBudget: 80);
         var paragraphA = "CHUNK-A-PARAGRAPH " + new string('à', 500);
         var paragraphB = "CHUNK-B-PARAGRAPH " + new string('b', 500);
         var chunkNotes = await chunkSummary.SummarizeAsync(
@@ -746,8 +755,8 @@ static async Task RunMeetingPipelineSmokeAsync(List<string> failures)
             ]);
         if (chunkHandler.SummaryCalls < 3)
             failures.Add("a transcript over the context budget should extract each part and merge once");
-        if (!chunkHandler.SummaryBodies.Any(body => body.Contains(paragraphA, StringComparison.Ordinal))
-            || !chunkHandler.SummaryBodies.Any(body => body.Contains(paragraphB, StringComparison.Ordinal)))
+        if (!chunkHandler.SummaryBodies.Any(body => SummaryInput(body).Contains(paragraphA, StringComparison.Ordinal))
+            || !chunkHandler.SummaryBodies.Any(body => SummaryInput(body).Contains(paragraphB, StringComparison.Ordinal)))
             failures.Add("chunked extraction should send each part in full");
         if (!chunkHandler.SummaryBodies.Any(body => body.Contains("Merge these structured", StringComparison.Ordinal) && !body.Contains(paragraphA, StringComparison.Ordinal)))
             failures.Add("the final merge should combine structured extracts rather than nested prose summaries");
@@ -769,14 +778,33 @@ static async Task RunMeetingPipelineSmokeAsync(List<string> failures)
     }
     finally
     {
-        if (Directory.Exists(audioDirectory)) Directory.Delete(audioDirectory, recursive: true);
+        IOException? locked = null;
+        for (var attempt = 0; attempt < 5 && Directory.Exists(audioDirectory); attempt++)
+        {
+            try
+            {
+                Directory.Delete(audioDirectory, recursive: true);
+                locked = null;
+                break;
+            }
+            catch (IOException exception)
+            {
+                locked = exception;
+                Thread.Sleep(100);
+            }
+        }
+
+        if (locked is not null) throw locked;
     }
 }
 
 static MeetingProcessingService CreatePipeline(HttpClient httpClient, int? inputTokenBudget)
 {
     var assembly = new AssemblyAiConfiguration("assembly-test-key");
-    var openAi = new OpenAiConfiguration("openai-test-key", summaryModelOverride: "gpt-6-luna");
+    var openAi = new OpenAiConfiguration(
+        "openai-test-key",
+        summaryModelOverride: "gpt-6-luna",
+        userEnvironment: new InMemoryUserEnvironmentStore());
     return new MeetingProcessingService(
         assembly,
         openAi,
@@ -804,6 +832,14 @@ static RecordingData PipelineRecording(Meeting meeting, string microphonePath, s
         SystemAudioPath = systemPath,
         SessionDirectory = Path.GetDirectoryName(microphonePath)
     };
+
+static string SummaryInput(string body)
+{
+    using var document = JsonDocument.Parse(body);
+    return document.RootElement.TryGetProperty("input", out var input) && input.ValueKind == JsonValueKind.String
+        ? input.GetString() ?? string.Empty
+        : string.Empty;
+}
 
 static string VietnameseNotes(bool actionItems, string? deadline)
 {
