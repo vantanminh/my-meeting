@@ -594,6 +594,7 @@ try
         }
     }
 
+    RunRecordingRecoverySmoke(failures);
     await RunMeetingPipelineSmokeAsync(failures);
 }
 catch (Exception exception)
@@ -622,6 +623,98 @@ if (failures.Count > 0)
 
 Console.WriteLine("Smoke checks passed: local workspace, audio setup, capture refusal, closed WAV tracks, processing, transcript, speakers, summary, progress, and GitHub updates.");
 return 0;
+
+static void RunRecordingRecoverySmoke(List<string> failures)
+{
+    var root = Path.Combine(Path.GetTempPath(), $"meeting-assistant-recovery-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(root);
+    try
+    {
+        var knownDir = Path.Combine(root, "20260926-180000-known");
+        Directory.CreateDirectory(knownDir);
+        var knownMic = Path.Combine(knownDir, "microphone.wav");
+        WriteFloatWaveFile(knownMic, durationSeconds: 1, sampleRate: 16_000, channels: 1);
+        var known = new Meeting
+        {
+            Title = "Known",
+            SessionDirectory = knownDir,
+            MicrophonePath = knownMic,
+            ProcessingPhase = ProcessingPhase.Completed,
+            Status = MeetingStatus.Ready,
+            Transcript = [new TranscriptSegment { Text = "kept" }],
+            Summary = new MeetingSummary { Overview = "done" }
+        };
+        known.EnsureCollections();
+
+        var orphanDir = Path.Combine(root, "20260926-190500-orphan");
+        Directory.CreateDirectory(orphanDir);
+        WriteFloatWaveFile(Path.Combine(orphanDir, "microphone.wav"), durationSeconds: 2, sampleRate: 16_000, channels: 1);
+        WriteFloatWaveFile(Path.Combine(orphanDir, "system-audio.wav"), durationSeconds: 2, sampleRate: 16_000, channels: 1);
+
+        var tinyDir = Path.Combine(root, "20260926-191000-tiny");
+        Directory.CreateDirectory(tinyDir);
+        File.WriteAllBytes(Path.Combine(tinyDir, "microphone.wav"), new byte[44]);
+
+        var first = RecordingRecovery.RecoverMissing(root, [known]);
+        if (first.Count != 1)
+        {
+            failures.Add("an orphan recording folder should be recovered once");
+        }
+        else
+        {
+            var recoveredMeeting = first[0];
+            if (recoveredMeeting.ProcessingPhase != ProcessingPhase.Failed)
+                failures.Add("a recovered recording should be ready to retry");
+            if (!string.Equals(recoveredMeeting.ProcessingError, RecordingRecovery.InterruptedMessage, StringComparison.Ordinal))
+                failures.Add("a recovered recording should explain that processing can continue");
+            if (string.IsNullOrWhiteSpace(recoveredMeeting.MicrophonePath) || !File.Exists(recoveredMeeting.MicrophonePath))
+                failures.Add("a recovered recording should point at the saved microphone file");
+            if (recoveredMeeting.StartedAt.Year != 2026 || recoveredMeeting.StartedAt.Month != 9 || recoveredMeeting.StartedAt.Day != 26)
+                failures.Add("a recovered recording should use the folder timestamp");
+            if (RecordingRecovery.RecoverMissing(root, [known, recoveredMeeting]).Count != 0)
+                failures.Add("scanning again should not duplicate a recovered recording");
+        }
+
+        var interrupted = new Meeting
+        {
+            Title = "Interrupted",
+            ProcessingPhase = ProcessingPhase.Transcribing,
+            Status = MeetingStatus.Processing,
+            TranscriptText = "partial transcript",
+            Transcript = [new TranscriptSegment { Text = "partial transcript" }]
+        };
+        interrupted.EnsureCollections();
+        var completed = new Meeting
+        {
+            Title = "Done",
+            ProcessingPhase = ProcessingPhase.Completed,
+            Status = MeetingStatus.Ready,
+            Summary = new MeetingSummary { Overview = "overview" },
+            Transcript = [new TranscriptSegment { Text = "full" }]
+        };
+        completed.EnsureCollections();
+        if (RecordingRecovery.MarkInterrupted([interrupted, completed]) != 1)
+            failures.Add("only an in-progress meeting should be marked interrupted");
+        if (interrupted.ProcessingPhase != ProcessingPhase.Failed
+            || interrupted.Transcript.Count != 1
+            || interrupted.Transcript[0].Text != "partial transcript")
+            failures.Add("an interrupted meeting should keep its transcript and become retryable");
+        if (completed.ProcessingPhase != ProcessingPhase.Completed || completed.Summary.Overview != "overview")
+            failures.Add("a completed meeting should stay completed during recovery");
+        if (RecordingRecovery.IsUsableAudio(null) || RecordingRecovery.IsUsableAudio(Path.Combine(tinyDir, "microphone.wav")))
+            failures.Add("a header-only wav should not count as usable audio");
+    }
+    finally
+    {
+        try
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+        catch (IOException)
+        {
+        }
+    }
+}
 
 static async Task RunMeetingPipelineSmokeAsync(List<string> failures)
 {
