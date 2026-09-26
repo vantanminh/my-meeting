@@ -20,6 +20,21 @@ before it enters domain code.
 
 Stopping a recording finalizes the local WAV tracks, then `MeetingProcessingService` runs one resumable pass on that meeting: queued, transcribing, summarizing, completed, or failed. AssemblyAI is the default speech-to-text adapter behind `ITranscriptionService`. OpenAI summarization uses the Responses API with a strict meeting-notes schema. A saved transcript is not submitted again when only the summary needs to be retried, and a completed meeting is left as-is.
 
+Long recordings stay bounded and observable:
+
+- Audio preparation runs off the UI thread. Each track is streamed to a 16 kHz mono PCM temp file in parallel, mixed on disk, and encoded to 48 kbps MP3 through Media Foundation before upload (about 20 MB per hour instead of about 115 MB of WAV). If the encoder is unavailable the WAV mix is uploaded instead.
+- The provider `HttpClient` has no global timeout; every call sets its own. Uploads scale with file size, AssemblyAI polling waits 15 minutes plus half the audio length (20 minutes to 3 hours) and tolerates short provider outages, and each OpenAI summary request has an 8 minute limit with one retry on transient failures. Long transcripts are summarized in parallel parts.
+- When the polling limit is reached, the job id is kept on the meeting, so a retry resumes polling instead of uploading again.
+- Every stage reports a detail line (upload percent, queued, transcribing, summary parts) plus an elapsed clock, and `MeetingProcessingLog` writes a daily `logs/processing-yyyyMMdd.log` under the app data folder (kept 14 days).
+
+## Background processing and tray
+
+`MainWindow` owns the tray wiring. Closing the window while a meeting is processing hides it instead of exiting. Processing keeps running, and the tray icon (a runtime-drawn state dot: red for recording, gold for processing, coral for failed) keeps its tooltip in sync with `MainViewModel.BackgroundStatusSummary`. Left-clicking the icon opens `TrayFlyoutWindow`, a quick-status panel bound to the same view model. It can stop a recording, cancel or retry processing, start a recording, open the app, or exit. When processing finishes and the window is not in front, a tray notification opens the finished meeting. Exit from the tray or flyout asks for confirmation while work is running.
+
+## Display scaling
+
+`UserPreferences.UiScale` (80% to 150%) is applied as a `LayoutTransform` on the authenticated and sign-in surfaces, never on the title bar. Responsive breakpoints are computed on the effective (unscaled) width, and the scale is capped so the layout never drops below its 760 × 520 design minimum. Users change it with Ctrl + plus, Ctrl + minus, Ctrl + 0, Ctrl + mouse wheel, or Settings > Account > Display size.
+
 ## Audio capture and transcription boundary
 
 `WindowsAudioCaptureService.StopAsync` waits for both WASAPI endpoints to stop
