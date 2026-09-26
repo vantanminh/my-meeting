@@ -643,7 +643,14 @@ static async Task RunMeetingPipelineSmokeAsync(List<string> failures)
         var pipeline = CreatePipeline(httpClient, inputTokenBudget: null);
         var meeting = new Meeting { Id = "vi-meeting", Title = "Họp sản phẩm" };
         var recording = PipelineRecording(meeting, microphonePath, systemPath);
-        var result = await pipeline.ProcessMeetingAsync(PipelineRequest(meeting, recording, "vi"), new Progress<ProcessingProgress>(_ => { }));
+        var reported = new RecordingProgress<ProcessingProgress>();
+        var result = await pipeline.ProcessMeetingAsync(PipelineRequest(meeting, recording, "vi"), reported);
+        if (!reported.Values.Any(value => value.Detail == "Preparing audio · {0}%"))
+            failures.Add("audio preparation should report its own progress detail");
+        if (!reported.Values.Any(value => value.Detail == "Uploading recording · {0}% of {1}" && value.DetailArgs.Length == 2))
+            failures.Add("the upload should report how much of the recording has been sent");
+        if (!reported.Values.Any(value => value.Detail == "Writing the summary, decisions and action items"))
+            failures.Add("summarizing should report a detail line so a long step never looks stuck");
 
         if (result.Meeting.Id != "vi-meeting") failures.Add("processing should keep the existing meeting id");
         if (result.Meeting.ProcessingPhase != ProcessingPhase.Completed) failures.Add("a successful meeting should be completed");
@@ -670,8 +677,11 @@ static async Task RunMeetingPipelineSmokeAsync(List<string> failures)
             failures.Add("Vietnamese meetings should steer detection and keep English code switching");
         if (handler.SummaryBodies.Any(body => !body.Contains("gpt-6-luna", StringComparison.Ordinal) || !body.Contains("json_schema", StringComparison.Ordinal) || !body.Contains("Never invent a deadline", StringComparison.Ordinal)))
             failures.Add("summaries should use structured outputs on gpt-6-luna");
-        if (handler.UploadLengths.Count != 1 || handler.UploadLengths[0] < 16_000 * 2 * 2)
+        // Three seconds of 48 kbps MP3 is about 18 KB; the uncompressed WAV fallback is larger.
+        if (handler.UploadLengths.Count != 1 || handler.UploadLengths[0] < 12_000)
             failures.Add("the full normalized recording should be uploaded once");
+        if (handler.UploadLengths.Count == 1 && handler.UploadLengths[0] > 16_000 * 2 * 4)
+            failures.Add("the upload should not be larger than the 16 kHz mono mix");
         if (handler.SawApiKeyInBody) failures.Add("provider requests must not put API keys in the body");
 
         handler.SummaryJson = VietnameseNotes(actionItems: true, deadline: null);
@@ -698,7 +708,7 @@ static async Task RunMeetingPipelineSmokeAsync(List<string> failures)
         {
             UtteranceText = technicalText,
             SummaryJson = VietnameseNotes(actionItems: false, deadline: null),
-            SummaryFailuresRemaining = 1
+            SummaryFailuresRemaining = 2
         };
         using var failedHttp = new HttpClient(failedHandler);
         var failedPipeline = CreatePipeline(failedHttp, inputTokenBudget: null);
@@ -721,6 +731,32 @@ static async Task RunMeetingPipelineSmokeAsync(List<string> failures)
             failures.Add("retry after a summary failure should not transcribe again");
         if (partial.ProcessingPhase != ProcessingPhase.Completed || string.IsNullOrWhiteSpace(partial.Summary.Overview))
             failures.Add("retry should finish the saved transcript into notes");
+
+        var flakyHandler = new FakeMeetingProviderHandler
+        {
+            UtteranceText = technicalText,
+            SummaryJson = VietnameseNotes(actionItems: false, deadline: null),
+            SummaryFailuresRemaining = 1,
+            TransientPollFailures = 3
+        };
+        using var flakyHttp = new HttpClient(flakyHandler);
+        var flakyPipeline = CreatePipeline(flakyHttp, inputTokenBudget: null);
+        var flakyMeeting = new Meeting { Id = "flaky", Title = "Mạng chập chờn" };
+        await flakyPipeline.ProcessMeetingAsync(PipelineRequest(flakyMeeting, recording, "vi"), new Progress<ProcessingProgress>(_ => { }));
+        if (flakyMeeting.ProcessingPhase != ProcessingPhase.Completed)
+            failures.Add("brief provider outages while polling or summarizing should be retried instead of failing the meeting");
+        if (flakyHandler.SummaryCalls != 2)
+            failures.Add("a transient summary failure should be retried exactly once");
+
+        if (AssemblyAiTranscriptionService.PollDeadline(null) != TimeSpan.FromMinutes(20))
+            failures.Add("an unknown audio length should still get a bounded transcription wait");
+        if (AssemblyAiTranscriptionService.PollDeadline(60 * 60 * 1000) != TimeSpan.FromMinutes(45))
+            failures.Add("a one-hour meeting should wait at most 45 minutes for transcription");
+        if (AssemblyAiTranscriptionService.PollDeadline(10 * 60 * 60 * 1000) != TimeSpan.FromHours(3))
+            failures.Add("very long meetings should cap the transcription wait");
+        if (AssemblyAiTranscriptionService.UploadTimeout(1_000_000) != TimeSpan.FromMinutes(10)
+            || AssemblyAiTranscriptionService.UploadTimeout(300_000_000) <= TimeSpan.FromMinutes(30))
+            failures.Add("upload timeouts should scale with the file size");
 
         var duplicateHandler = new FakeMeetingProviderHandler
         {
@@ -832,7 +868,7 @@ static MeetingProcessingService CreatePipeline(HttpClient httpClient, int? input
         assembly,
         openAi,
         new AssemblyAiTranscriptionService(assembly, httpClient, TimeSpan.Zero),
-        new MeetingSummaryService(openAi, httpClient, inputTokenBudget),
+        new MeetingSummaryService(openAi, httpClient, inputTokenBudget, retryDelay: TimeSpan.Zero),
         new OpenAiMeetingIntelligenceService(openAi, httpClient: httpClient));
 }
 
@@ -953,6 +989,25 @@ static bool IsPcm16Wave(byte[] payload)
     return hasPcm16Format && hasAudioData;
 }
 
+sealed class RecordingProgress<T> : IProgress<T>
+{
+    private readonly object _gate = new();
+    private readonly List<T> _values = [];
+
+    public IReadOnlyList<T> Values
+    {
+        get
+        {
+            lock (_gate) return _values.ToList();
+        }
+    }
+
+    public void Report(T value)
+    {
+        lock (_gate) _values.Add(value);
+    }
+}
+
 sealed class FakeMeetingProviderHandler : HttpMessageHandler
 {
     private int _polls;
@@ -967,6 +1022,7 @@ sealed class FakeMeetingProviderHandler : HttpMessageHandler
     public string SummaryJson { get; set; } = """{"title":"Notes","summary":"Noted.","keyPoints":[],"decisions":[],"actionItems":[],"deadlines":[],"openQuestions":[],"importantMoments":[]}""";
     public int SummaryFailuresRemaining { get; set; }
     public bool DelayFirstPoll { get; set; }
+    public int TransientPollFailures { get; set; }
     public bool SawApiKeyInBody { get; private set; }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -993,6 +1049,15 @@ sealed class FakeMeetingProviderHandler : HttpMessageHandler
 
         if (path.StartsWith("/v2/transcript/", StringComparison.Ordinal))
         {
+            if (TransientPollFailures > 0)
+            {
+                TransientPollFailures--;
+                return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                {
+                    Content = new StringContent("{\"error\":\"busy\"}", Encoding.UTF8, "application/json")
+                };
+            }
+
             if (DelayFirstPoll && _polls++ == 0)
             {
                 await Task.Delay(200, cancellationToken);

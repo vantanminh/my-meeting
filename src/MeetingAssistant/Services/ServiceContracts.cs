@@ -50,7 +50,12 @@ public interface IAudioCaptureService : IDisposable
     Task<DeviceTestResult> TestAsync(AudioConfiguration configuration, CancellationToken cancellationToken = default);
 }
 
-public sealed record ProcessingProgress(int Percent, int StageIndex, string Stage, string Message, bool ShowPercent = true);
+public sealed record ProcessingProgress(int Percent, int StageIndex, string Stage, string Message, bool ShowPercent = true)
+{
+    /// <summary>Composite-format template translated before formatting with <see cref="DetailArgs"/>.</summary>
+    public string? Detail { get; init; }
+    public object[] DetailArgs { get; init; } = [];
+}
 public sealed record ProcessingResult(Meeting Meeting);
 
 public sealed class MeetingProcessingRequest

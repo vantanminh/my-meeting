@@ -10,6 +10,8 @@ namespace MeetingAssistant.Services;
 
 public sealed record MeetingNotes(string Title, MeetingSummary Summary);
 
+public sealed record SummaryProgress(int CompletedParts, int TotalParts, bool Merging);
+
 public sealed class MeetingSummaryService
 {
     public const string Instructions =
@@ -41,6 +43,9 @@ public sealed class MeetingSummaryService
         """;
 
     private const int ReservedTokens = 24_000;
+    private const int MaxAttempts = 2;
+    private const int MaxParallelRequests = 3;
+    private static readonly TimeSpan DefaultRequestTimeout = TimeSpan.FromMinutes(8);
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -55,22 +60,29 @@ public sealed class MeetingSummaryService
     private readonly OpenAiConfiguration _configuration;
     private readonly HttpClient _httpClient;
     private readonly int? _inputTokenBudget;
+    private readonly TimeSpan _requestTimeout;
+    private readonly TimeSpan _retryDelay;
 
     public MeetingSummaryService(
         OpenAiConfiguration configuration,
         HttpClient httpClient,
-        int? inputTokenBudget = null)
+        int? inputTokenBudget = null,
+        TimeSpan? requestTimeout = null,
+        TimeSpan? retryDelay = null)
     {
         _configuration = configuration;
         _httpClient = httpClient;
         _inputTokenBudget = inputTokenBudget;
+        _requestTimeout = requestTimeout ?? DefaultRequestTimeout;
+        _retryDelay = retryDelay ?? TimeSpan.FromSeconds(3);
     }
 
     public async Task<MeetingNotes> SummarizeAsync(
         string title,
         string? language,
         IReadOnlyList<TranscriptSegment> transcript,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<SummaryProgress>? progress = null)
     {
         if (!_configuration.IsConfigured)
         {
@@ -87,14 +99,36 @@ public sealed class MeetingSummaryService
             return await RequestAsync(title, language, fullText, merge: false, cancellationToken);
 
         var chunks = PackChunks(transcript, budget);
-        var partials = new List<MeetingNotes>(chunks.Count);
-        for (var index = 0; index < chunks.Count; index++)
+        var completed = 0;
+        progress?.Report(new SummaryProgress(0, chunks.Count, Merging: false));
+        var partials = await RunLimitedAsync(chunks.Select((chunk, index) => (Func<Task<MeetingNotes>>)(async () =>
         {
             var partTitle = $"{title} (part {index + 1} of {chunks.Count})";
-            partials.Add(await RequestAsync(partTitle, language, FormatTranscript(chunks[index]), merge: false, cancellationToken));
-        }
+            var notes = await RequestAsync(partTitle, language, FormatTranscript(chunk), merge: false, cancellationToken);
+            progress?.Report(new SummaryProgress(Interlocked.Increment(ref completed), chunks.Count, Merging: false));
+            return notes;
+        })).ToList(), cancellationToken);
 
+        progress?.Report(new SummaryProgress(chunks.Count, chunks.Count, Merging: true));
         return await MergeAsync(title, language, partials, budget, cancellationToken);
+    }
+
+    private static async Task<List<T>> RunLimitedAsync<T>(IReadOnlyList<Func<Task<T>>> work, CancellationToken cancellationToken)
+    {
+        using var gate = new SemaphoreSlim(MaxParallelRequests);
+        var tasks = work.Select(async item =>
+        {
+            await gate.WaitAsync(cancellationToken);
+            try
+            {
+                return await item();
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }).ToList();
+        return (await Task.WhenAll(tasks)).ToList();
     }
 
     private async Task<MeetingNotes> MergeAsync(
@@ -128,39 +162,33 @@ public sealed class MeetingSummaryService
             if (current.Count > 0) groups.Add(current);
             if (groups.Count == pending.Count && groups.All(group => group.Count == 1))
             {
-                var paired = new List<MeetingNotes>();
+                var pairs = new List<Func<Task<MeetingNotes>>>();
                 for (var index = 0; index < pending.Count; index += 2)
                 {
                     if (index + 1 >= pending.Count)
                     {
-                        paired.Add(pending[index]);
+                        var single = pending[index];
+                        pairs.Add(() => Task.FromResult(single));
                         continue;
                     }
 
                     var pairedInput = JsonSerializer.Serialize(
                         new[] { ToPayload(pending[index]), ToPayload(pending[index + 1]) },
                         JsonOptions);
-                    paired.Add(await RequestAsync(title, language, pairedInput, merge: true, cancellationToken));
+                    pairs.Add(() => RequestAsync(title, language, pairedInput, merge: true, cancellationToken));
                 }
 
-                pending = paired;
+                pending = await RunLimitedAsync(pairs, cancellationToken);
                 continue;
             }
 
-            var merged = new List<MeetingNotes>(groups.Count);
-            foreach (var group in groups)
+            var merges = groups.Select(group => (Func<Task<MeetingNotes>>)(() =>
             {
-                if (group.Count == 1)
-                {
-                    merged.Add(group[0]);
-                    continue;
-                }
-
+                if (group.Count == 1) return Task.FromResult(group[0]);
                 var input = JsonSerializer.Serialize(group.Select(ToPayload), JsonOptions);
-                merged.Add(await RequestAsync(title, language, input, merge: true, cancellationToken));
-            }
-
-            pending = merged;
+                return RequestAsync(title, language, input, merge: true, cancellationToken);
+            })).ToList();
+            pending = await RunLimitedAsync(merges, cancellationToken);
         }
 
         return pending[0];
@@ -228,63 +256,80 @@ public sealed class MeetingSummaryService
             };
         }
 
+        var wireBody = payload.ToJsonString(WireJsonOptions);
+        for (var attempt = 1; ; attempt++)
+        {
+            var (status, body, failure) = await SendOnceAsync(wireBody, cancellationToken);
+            if (failure is null && status is >= 200 and < 300)
+                return ParseResponse(body);
+
+            var transient = failure is not null || status is 408 or 429 or 500 or 502 or 503 or 504;
+            if (!transient || attempt >= MaxAttempts)
+                throw failure ?? new MeetingProcessingException(MapSummaryFailure(status, body));
+
+            MeetingProcessingLog.Write("meeting_summary_retry", "-", "openai", "retrying", null, failure?.Message ?? status.ToString());
+            if (_retryDelay > TimeSpan.Zero)
+                await Task.Delay(_retryDelay * attempt, cancellationToken);
+        }
+    }
+
+    private async Task<(int Status, string Body, MeetingProcessingException? Failure)> SendOnceAsync(
+        string wireBody,
+        CancellationToken cancellationToken)
+    {
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/responses")
         {
-            Content = new StringContent(payload.ToJsonString(WireJsonOptions), Encoding.UTF8, "application/json")
+            Content = new StringContent(wireBody, Encoding.UTF8, "application/json")
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _configuration.ApiKey);
 
-        HttpResponseMessage response;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(_requestTimeout);
         try
         {
-            response = await _httpClient.SendAsync(request, cancellationToken);
+            using var response = await _httpClient.SendAsync(request, timeout.Token);
+            var body = await response.Content.ReadAsStringAsync(timeout.Token);
+            return ((int)response.StatusCode, body, null);
         }
         catch (HttpRequestException exception)
         {
-            throw new MeetingProcessingException(
+            return (0, string.Empty, new MeetingProcessingException(
                 "OpenAI is not reachable. The transcript is saved; retry to generate notes.",
-                exception);
+                exception));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new MeetingProcessingException(
-                "OpenAI took too long to respond. The transcript is saved; retry to generate notes.");
+            return (0, string.Empty, new MeetingProcessingException(
+                "OpenAI took too long to respond. The transcript is saved; retry to generate notes."));
         }
+    }
 
-        using (response)
+    private static MeetingNotes ParseResponse(string body)
+    {
+        try
         {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (!response.IsSuccessStatusCode)
+            using var document = JsonDocument.Parse(body);
+            if (document.RootElement.TryGetProperty("status", out var statusElement)
+                && string.Equals(statusElement.GetString(), "incomplete", StringComparison.OrdinalIgnoreCase))
             {
                 throw new MeetingProcessingException(
-                    MapSummaryFailure((int)response.StatusCode, body));
+                    "The meeting notes were cut off before they could be saved. The transcript is saved; retry to generate notes.");
             }
 
-            try
-            {
-                using var document = JsonDocument.Parse(body);
-                if (document.RootElement.TryGetProperty("status", out var statusElement)
-                    && string.Equals(statusElement.GetString(), "incomplete", StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new MeetingProcessingException(
-                        "The meeting notes were cut off before they could be saved. The transcript is saved; retry to generate notes.");
-                }
-
-                var outputText = ExtractOutputText(document.RootElement);
-                if (string.IsNullOrWhiteSpace(outputText))
-                    throw new JsonException();
-                return ParseNotes(outputText);
-            }
-            catch (MeetingProcessingException)
-            {
-                throw;
-            }
-            catch (JsonException exception)
-            {
-                throw new MeetingProcessingException(
-                    "The meeting notes were not in the expected format. The transcript is saved; retry to generate notes.",
-                    exception);
-            }
+            var outputText = ExtractOutputText(document.RootElement);
+            if (string.IsNullOrWhiteSpace(outputText))
+                throw new JsonException();
+            return ParseNotes(outputText);
+        }
+        catch (MeetingProcessingException)
+        {
+            throw;
+        }
+        catch (JsonException exception)
+        {
+            throw new MeetingProcessingException(
+                "The meeting notes were not in the expected format. The transcript is saved; retry to generate notes.",
+                exception);
         }
     }
 

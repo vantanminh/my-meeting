@@ -49,15 +49,42 @@ public sealed class AssemblyAiTranscriptionService : ITranscriptionService
 
         if (!string.IsNullOrWhiteSpace(request.ExistingJobId))
         {
-            var existing = await TryReadCompletedJobAsync(request.ExistingJobId, cancellationToken);
+            var existing = await TryReadCompletedJobAsync(request.ExistingJobId, request.AudioDurationMs, request.Progress, cancellationToken);
             if (existing is not null) return existing;
         }
 
-        var uploadUrl = await UploadAsync(request.AudioPath, cancellationToken);
+        var uploadUrl = await UploadAsync(request.AudioPath, request.Progress, cancellationToken);
         var jobId = await SubmitAsync(uploadUrl, request.LanguageCode, cancellationToken);
         if (request.JobSubmitted is not null)
             await request.JobSubmitted(jobId, cancellationToken);
-        return await PollAsync(jobId, cancellationToken);
+        return await PollAsync(jobId, request.AudioDurationMs, request.Progress, cancellationToken);
+    }
+
+    public async Task<TranscriptResult?> ResumeAsync(
+        string jobId,
+        int? audioDurationMs,
+        IProgress<TranscriptionProgress>? progress,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_configuration.IsConfigured || string.IsNullOrWhiteSpace(jobId))
+            return null;
+        return await TryReadCompletedJobAsync(jobId, audioDurationMs, progress, cancellationToken);
+    }
+
+    internal static TimeSpan PollDeadline(int? audioDurationMs)
+    {
+        // AssemblyAI usually returns well under half the audio length. The job id is saved,
+        // so hitting this limit only pauses the meeting; a retry resumes polling.
+        var audio = TimeSpan.FromMilliseconds(Math.Max(0, audioDurationMs ?? 0));
+        var deadline = TimeSpan.FromMinutes(15) + audio * 0.5;
+        if (deadline < TimeSpan.FromMinutes(20)) return TimeSpan.FromMinutes(20);
+        return deadline > TimeSpan.FromHours(3) ? TimeSpan.FromHours(3) : deadline;
+    }
+
+    internal static TimeSpan UploadTimeout(long bytes)
+    {
+        var atSlowLink = TimeSpan.FromSeconds(bytes / 150_000.0);
+        return atSlowLink < TimeSpan.FromMinutes(10) ? TimeSpan.FromMinutes(10) : atSlowLink;
     }
 
     internal static JsonObject CreateTranscriptBody(string audioUrl, string? languageCode, IReadOnlyList<string> speechModels)
@@ -98,7 +125,11 @@ public sealed class AssemblyAiTranscriptionService : ITranscriptionService
         return body;
     }
 
-    private async Task<TranscriptResult?> TryReadCompletedJobAsync(string jobId, CancellationToken cancellationToken)
+    private async Task<TranscriptResult?> TryReadCompletedJobAsync(
+        string jobId,
+        int? audioDurationMs,
+        IProgress<TranscriptionProgress>? progress,
+        CancellationToken cancellationToken)
     {
         using var response = await SendAsync(
             () => new HttpRequestMessage(HttpMethod.Get, $"{BaseUrl}/v2/transcript/{Uri.EscapeDataString(jobId)}"),
@@ -118,20 +149,27 @@ public sealed class AssemblyAiTranscriptionService : ITranscriptionService
         if (string.Equals(status, "error", StringComparison.OrdinalIgnoreCase))
             return null;
 
-        return await PollAsync(jobId, cancellationToken);
+        return await PollAsync(jobId, audioDurationMs, progress, cancellationToken);
     }
 
-    private async Task<string> UploadAsync(string path, CancellationToken cancellationToken)
+    private async Task<string> UploadAsync(
+        string path,
+        IProgress<TranscriptionProgress>? progress,
+        CancellationToken cancellationToken)
     {
+        var totalBytes = new FileInfo(path).Length;
+        progress?.Report(new TranscriptionProgress(TranscriptionStage.Uploading, 0, totalBytes));
         using var response = await SendAsync(() =>
         {
             var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/v2/upload");
-            var stream = File.OpenRead(path);
-            var content = new StreamContent(stream);
+            var stream = new ProgressReadStream(File.OpenRead(path), sent =>
+                progress?.Report(new TranscriptionProgress(TranscriptionStage.Uploading, sent, totalBytes)));
+            var content = new StreamContent(stream, 1 << 16);
             content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+            content.Headers.ContentLength = totalBytes;
             request.Content = content;
             return request;
-        }, TimeSpan.FromMinutes(15), cancellationToken);
+        }, UploadTimeout(totalBytes), cancellationToken);
 
         var body = await ReadBodyAsync(response, cancellationToken);
         if (!response.IsSuccessStatusCode)
@@ -175,20 +213,46 @@ public sealed class AssemblyAiTranscriptionService : ITranscriptionService
         return jobId;
     }
 
-    private async Task<TranscriptResult> PollAsync(string jobId, CancellationToken cancellationToken)
+    private async Task<TranscriptResult> PollAsync(
+        string jobId,
+        int? audioDurationMs,
+        IProgress<TranscriptionProgress>? progress,
+        CancellationToken cancellationToken)
     {
-        var deadline = DateTimeOffset.UtcNow.AddHours(2);
+        const int maxConsecutiveFailures = 5;
+        var deadline = DateTimeOffset.UtcNow + PollDeadline(audioDurationMs);
+        var consecutiveFailures = 0;
         while (DateTimeOffset.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            using var response = await SendAsync(
-                () => new HttpRequestMessage(HttpMethod.Get, $"{BaseUrl}/v2/transcript/{Uri.EscapeDataString(jobId)}"),
-                TimeSpan.FromSeconds(30),
-                cancellationToken);
-            var body = await ReadBodyAsync(response, cancellationToken);
-            if (!response.IsSuccessStatusCode)
-                throw new MeetingProcessingException(MapHttpFailure(response.StatusCode, body, "AssemblyAI transcription failed."));
+            string body;
+            try
+            {
+                using var response = await SendAsync(
+                    () => new HttpRequestMessage(HttpMethod.Get, $"{BaseUrl}/v2/transcript/{Uri.EscapeDataString(jobId)}"),
+                    TimeSpan.FromSeconds(30),
+                    cancellationToken);
+                body = await ReadBodyAsync(response, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var failure = new MeetingProcessingException(MapHttpFailure(response.StatusCode, body, "AssemblyAI transcription failed."));
+                    if (!IsTransient(response.StatusCode) || ++consecutiveFailures >= maxConsecutiveFailures)
+                        throw failure;
+                    await DelayAsync(consecutiveFailures, cancellationToken);
+                    continue;
+                }
+            }
+            catch (MeetingProcessingException exception) when (exception.InnerException is HttpRequestException
+                || exception.Message.Contains("took too long", StringComparison.OrdinalIgnoreCase))
+            {
+                // A short network drop while waiting should not throw away a job that is
+                // still running on AssemblyAI.
+                if (++consecutiveFailures >= maxConsecutiveFailures) throw;
+                await DelayAsync(consecutiveFailures, cancellationToken);
+                continue;
+            }
 
+            consecutiveFailures = 0;
             using var document = ParseJson(body);
             var status = ReadString(document.RootElement, "status");
             if (string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase))
@@ -199,12 +263,27 @@ public sealed class AssemblyAiTranscriptionService : ITranscriptionService
                     "AssemblyAI transcription failed. " + Sanitize(ReadString(document.RootElement, "error") ?? "The transcription job failed."));
             }
 
+            progress?.Report(new TranscriptionProgress(
+                string.Equals(status, "queued", StringComparison.OrdinalIgnoreCase)
+                    ? TranscriptionStage.Queued
+                    : TranscriptionStage.Transcribing));
+
             if (_pollInterval > TimeSpan.Zero)
                 await Task.Delay(_pollInterval, cancellationToken);
         }
 
-        throw new MeetingProcessingException("AssemblyAI took too long to respond. Retry processing.");
+        throw new MeetingProcessingException(
+            "AssemblyAI is still transcribing this recording. The job is saved; retry in a few minutes to pick up the result.");
     }
+
+    private async Task DelayAsync(int attempt, CancellationToken cancellationToken)
+    {
+        if (_pollInterval <= TimeSpan.Zero) return;
+        await Task.Delay(TimeSpan.FromSeconds(Math.Min(30, 2 * attempt)), cancellationToken);
+    }
+
+    private static bool IsTransient(HttpStatusCode statusCode)
+        => (int)statusCode is 408 or 429 or 500 or 502 or 503 or 504;
 
     private static TranscriptResult ParseCompleted(JsonElement root, string jobId)
     {
@@ -356,4 +435,64 @@ public sealed class AssemblyAiTranscriptionService : ITranscriptionService
 
     private static bool ContainsAny(string value, params string[] tokens)
         => tokens.Any(token => value.Contains(token, StringComparison.OrdinalIgnoreCase));
+
+    private sealed class ProgressReadStream : Stream
+    {
+        private readonly Stream _inner;
+        private readonly Action<long> _report;
+        private long _sent;
+        private long _lastReported;
+
+        public ProgressReadStream(Stream inner, Action<long> report)
+        {
+            _inner = inner;
+            _report = report;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => _inner.CanSeek;
+        public override bool CanWrite => false;
+        public override long Length => _inner.Length;
+
+        public override long Position
+        {
+            get => _inner.Position;
+            set
+            {
+                _inner.Position = value;
+                _sent = value;
+            }
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => Track(_inner.Read(buffer, offset, count));
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            => Track(await _inner.ReadAsync(buffer, cancellationToken));
+
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            => Track(await _inner.ReadAsync(buffer.AsMemory(offset, count), cancellationToken));
+
+        private int Track(int read)
+        {
+            _sent += read;
+            if (read == 0 || _sent - _lastReported >= 256 * 1024)
+            {
+                _lastReported = _sent;
+                _report(_sent);
+            }
+
+            return read;
+        }
+
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => _sent = _inner.Seek(offset, origin);
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _inner.Dispose();
+            base.Dispose(disposing);
+        }
+    }
 }

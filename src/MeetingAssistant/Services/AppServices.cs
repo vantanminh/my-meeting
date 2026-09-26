@@ -4,7 +4,8 @@ namespace MeetingAssistant.Services;
 
 public sealed class AppServices : IDisposable
 {
-    private readonly HttpClient _providerHttpClient = new() { Timeout = TimeSpan.FromMinutes(30) };
+    // Every provider call sets its own deadline (uploads scale with file size).
+    private readonly HttpClient _providerHttpClient = new() { Timeout = Timeout.InfiniteTimeSpan };
 
     public AppServices()
     {
