@@ -145,17 +145,34 @@ internal static class MeetingAudioPreparation
         return mixed;
     }
 
-    private static WaveStream OpenSource(string path)
+    private static WaveStream OpenSource(string path) => OpenWaveFile(path);
+
+    internal static WaveStream OpenWaveFile(string path)
     {
         var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         try
         {
-            return new WaveFileReader(stream);
+            // WaveFileReader(Stream) does not own the stream, so the WAV stays locked
+            // unless this wrapper closes it.
+            return new OwnedWaveFileReader(stream);
         }
         catch
         {
             stream.Dispose();
             throw;
+        }
+    }
+
+    private sealed class OwnedWaveFileReader : WaveFileReader
+    {
+        private readonly Stream _ownedStream;
+
+        public OwnedWaveFileReader(Stream stream) : base(stream) => _ownedStream = stream;
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing) _ownedStream.Dispose();
         }
     }
 

@@ -619,16 +619,9 @@ public sealed class OpenAiMeetingIntelligenceService : IMeetingIntelligenceServi
 
     private static WaveStream OpenSourceAudio(string path)
     {
-        FileStream? fileStream = null;
         try
         {
-            fileStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            return new WaveFileReader(fileStream);
-        }
-        catch (Exception) when (fileStream is not null)
-        {
-            fileStream.Dispose();
-            return new AudioFileReader(path);
+            return MeetingAudioPreparation.OpenWaveFile(path);
         }
         catch (Exception)
         {
