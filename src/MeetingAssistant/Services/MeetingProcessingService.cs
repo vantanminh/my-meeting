@@ -24,19 +24,22 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
     private readonly ITranscriptionService _transcription;
     private readonly MeetingSummaryService _summary;
     private readonly OpenAiMeetingIntelligenceService _openAiIntelligence;
+    private readonly bool _compressUploads;
 
     public MeetingProcessingService(
         AssemblyAiConfiguration assemblyAi,
         OpenAiConfiguration openAi,
         ITranscriptionService transcription,
         MeetingSummaryService summary,
-        OpenAiMeetingIntelligenceService openAiIntelligence)
+        OpenAiMeetingIntelligenceService openAiIntelligence,
+        bool compressUploads = true)
     {
         _assemblyAi = assemblyAi;
         _openAi = openAi;
         _transcription = transcription;
         _summary = summary;
         _openAiIntelligence = openAiIntelligence;
+        _compressUploads = compressUploads;
     }
 
     public string ProviderLabel
@@ -137,29 +140,60 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
                 Report(progress, 8, 0, "Recording saved", "The audio files are on this computer. Preparing them for transcription.");
                 MeetingProcessingLog.Write("meeting_transcription_started", meeting.Id, "assemblyai", "started", null, null);
 
-                using var prepared = MeetingAudioPreparation.Prepare(request.Recording, cancellationToken);
-                meeting.AudioDurationMs = prepared.DurationMs;
-                EnsureStillThere(request);
-                meeting.ProcessingPhase = ProcessingPhase.Transcribing;
-                await PersistAsync(request, cancellationToken);
-                Report(progress, 24, 1, "Audio prepared", "Microphone and system audio are mixed. Uploading the recording.");
-                Report(progress, 36, 2, "Uploading recording", "Sending the finished recording. Transcription starts after the upload, not while you were talking.");
-
                 var transcriptionStarted = Stopwatch.StartNew();
-                var transcript = await _transcription.TranscribeAsync(new TranscriptionRequest
+                var transcriptionProgress = new ForwardProgress<TranscriptionProgress>(value => ReportTranscription(progress, value));
+                TranscriptResult? transcript = null;
+                if (!string.IsNullOrWhiteSpace(meeting.TranscriptionJobId))
                 {
-                    AudioPath = prepared.Path,
-                    LanguageCode = request.TranscriptionLanguage,
-                    ExistingJobId = meeting.TranscriptionJobId,
-                    JobSubmitted = async (jobId, token) =>
+                    Report(progress, 45, 2, "Transcribing meeting", "Transcription is running. Speaker labels and timestamps are added when it finishes.", "Checking the saved transcription job");
+                    transcript = await _transcription.ResumeAsync(
+                        meeting.TranscriptionJobId,
+                        meeting.AudioDurationMs is { } savedMs ? (int)Math.Min(savedMs, int.MaxValue) : null,
+                        transcriptionProgress,
+                        cancellationToken);
+                }
+
+                if (transcript is null)
+                {
+                    var prepareStarted = Stopwatch.StartNew();
+                    var prepareProgress = new ForwardProgress<double>(fraction =>
                     {
-                        meeting.TranscriptionJobId = jobId;
-                        meeting.TranscriptionProvider = "assemblyai";
-                        meeting.ProcessingPhase = ProcessingPhase.Transcribing;
-                        await PersistAsync(request, token);
-                        Report(progress, 52, 2, "Transcribing meeting", "Transcription is running. Speaker labels and timestamps are added when it finishes.");
-                    }
-                }, cancellationToken);
+                        var percent = (int)Math.Round(fraction * 100);
+                        Report(progress, 8 + (int)(fraction * 16), 0, "Recording saved", "The audio files are on this computer. Preparing them for transcription.", "Preparing audio · {0}%", percent);
+                    });
+                    using var prepared = await Task.Run(
+                        () => MeetingAudioPreparation.Prepare(request.Recording, cancellationToken, prepareProgress, _compressUploads),
+                        cancellationToken);
+                    MeetingProcessingLog.Write(
+                        "meeting_audio_prepared",
+                        meeting.Id,
+                        Path.GetExtension(prepared.Path).TrimStart('.'),
+                        $"bytes={prepared.UploadBytes} audioMs={prepared.DurationMs}",
+                        prepareStarted.Elapsed,
+                        null);
+                    meeting.AudioDurationMs = prepared.DurationMs;
+                    EnsureStillThere(request);
+                    meeting.ProcessingPhase = ProcessingPhase.Transcribing;
+                    await PersistAsync(request, cancellationToken);
+                    Report(progress, 24, 1, "Audio prepared", "Microphone and system audio are mixed. Uploading the recording.");
+                    Report(progress, 36, 2, "Uploading recording", "Sending the finished recording. Transcription starts after the upload, not while you were talking.");
+
+                    transcript = await _transcription.TranscribeAsync(new TranscriptionRequest
+                    {
+                        AudioPath = prepared.Path,
+                        LanguageCode = request.TranscriptionLanguage,
+                        AudioDurationMs = prepared.DurationMs,
+                        Progress = transcriptionProgress,
+                        JobSubmitted = async (jobId, token) =>
+                        {
+                            meeting.TranscriptionJobId = jobId;
+                            meeting.TranscriptionProvider = "assemblyai";
+                            meeting.ProcessingPhase = ProcessingPhase.Transcribing;
+                            await PersistAsync(request, token);
+                            Report(progress, 52, 2, "Transcribing meeting", "Transcription is running. Speaker labels and timestamps are added when it finishes.");
+                        }
+                    }, cancellationToken);
+                }
 
                 ApplyTranscript(meeting, transcript, transcriptionStarted.Elapsed);
                 Report(progress, 68, 3, "Transcript saved", "Speaker turns are saved. Writing the meeting notes next.");
@@ -184,7 +218,16 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
                 meeting.Title,
                 meeting.DetectedLanguage,
                 meeting.Transcript,
-                cancellationToken);
+                cancellationToken,
+                new ForwardProgress<SummaryProgress>(value =>
+                {
+                    if (value.Merging)
+                        Report(progress, 94, 4, "Writing meeting notes", "Creating the overview, key points, decisions, action items, and open questions from the transcript.", "Merging notes from every part");
+                    else
+                        Report(progress, 82 + 12 * value.CompletedParts / Math.Max(1, value.TotalParts), 4,
+                            "Writing meeting notes", "Creating the overview, key points, decisions, action items, and open questions from the transcript.",
+                            "Summarized {0} of {1} parts", value.CompletedParts, value.TotalParts);
+                }));
             ApplyNotes(meeting, notes, summaryStarted.Elapsed);
             meeting.ProcessingPhase = ProcessingPhase.Completed;
             meeting.Status = MeetingStatus.Ready;
@@ -385,7 +428,8 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
             ? "meeting_transcription_failed"
             : "meeting_summary_failed";
         var provider = meeting.Transcript.Count == 0 ? _transcription.ProviderName : "openai";
-        MeetingProcessingLog.Write(transcriptEvent, meeting.Id, provider, "failed", elapsed, sanitized);
+        var cause = exception.InnerException ?? exception;
+        MeetingProcessingLog.Write(transcriptEvent, meeting.Id, provider, "failed", elapsed, $"{sanitized} ({cause.GetType().Name})");
         try
         {
             await PersistAsync(request, CancellationToken.None);
@@ -395,7 +439,6 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
             Trace.TraceWarning("meeting_processing_persist_failed meeting={0}", meeting.Id);
         }
 
-        _ = exception;
         _ = cancellationToken;
     }
 
@@ -404,8 +447,46 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
         int percent,
         int stageIndex,
         string stage,
-        string message)
-        => progress.Report(new ProcessingProgress(percent, stageIndex, stage, message, ShowPercent: false));
+        string message,
+        string? detail = null,
+        params object[] detailArgs)
+        => progress.Report(new ProcessingProgress(percent, stageIndex, stage, message, ShowPercent: false)
+        {
+            Detail = detail,
+            DetailArgs = detailArgs
+        });
+
+    private static void ReportTranscription(IProgress<ProcessingProgress> progress, TranscriptionProgress value)
+    {
+        switch (value.Stage)
+        {
+            case TranscriptionStage.Uploading:
+                var fraction = value.TotalBytes > 0 ? Math.Clamp(value.BytesSent / (double)value.TotalBytes, 0, 1) : 0;
+                Report(progress, 36 + (int)(fraction * 12), 2, "Uploading recording", "Sending the finished recording. Transcription starts after the upload, not while you were talking.",
+                    "Uploading recording · {0}% of {1}", (int)Math.Round(fraction * 100), FormatSize(value.TotalBytes));
+                break;
+            case TranscriptionStage.Queued:
+                Report(progress, 52, 2, "Transcribing meeting", "Transcription is running. Speaker labels and timestamps are added when it finishes.", "AssemblyAI has queued the recording");
+                break;
+            default:
+                Report(progress, 58, 2, "Transcribing meeting", "Transcription is running. Speaker labels and timestamps are added when it finishes.", "AssemblyAI is transcribing and separating speakers");
+                break;
+        }
+    }
+
+    private static string FormatSize(long bytes)
+        => bytes >= 1024 * 1024
+            ? $"{bytes / (1024d * 1024d):0.#} MB"
+            : $"{Math.Max(1, bytes / 1024)} KB";
+
+    private sealed class ForwardProgress<T> : IProgress<T>
+    {
+        private readonly Action<T> _handler;
+
+        public ForwardProgress(Action<T> handler) => _handler = handler;
+
+        public void Report(T value) => _handler(value);
+    }
 
     internal static string DisplaySpeaker(string? speaker)
     {
@@ -423,6 +504,29 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
 
 internal static class MeetingProcessingLog
 {
+    private static readonly object FileGate = new();
+    private static string? _directory;
+
+    public static string? Directory => _directory;
+
+    public static void UseDirectory(string directory)
+    {
+        try
+        {
+            System.IO.Directory.CreateDirectory(directory);
+            foreach (var old in new DirectoryInfo(directory).GetFiles("processing-*.log"))
+            {
+                if (old.LastWriteTimeUtc < DateTime.UtcNow.AddDays(-14)) old.Delete();
+            }
+
+            _directory = directory;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            _directory = null;
+        }
+    }
+
     public static void Write(
         string eventName,
         string meetingId,
@@ -433,7 +537,7 @@ internal static class MeetingProcessingLog
     {
         var durationMs = duration is null ? string.Empty : ((long)duration.Value.TotalMilliseconds).ToString();
         var sanitized = AssemblyAiTranscriptionService.Sanitize(error);
-        Trace.TraceInformation(
+        var line = string.Format(
             "{0} meeting={1} provider={2} status={3} durationMs={4} error={5}",
             eventName,
             meetingId,
@@ -441,5 +545,21 @@ internal static class MeetingProcessingLog
             status,
             durationMs,
             sanitized);
+        Trace.TraceInformation(line);
+
+        var directory = _directory;
+        if (directory is null) return;
+        try
+        {
+            lock (FileGate)
+            {
+                File.AppendAllText(
+                    Path.Combine(directory, $"processing-{DateTime.Now:yyyyMMdd}.log"),
+                    $"{DateTimeOffset.Now:O} {line}{Environment.NewLine}");
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 }

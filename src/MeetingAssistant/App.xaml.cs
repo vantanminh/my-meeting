@@ -12,6 +12,7 @@ public partial class App : System.Windows.Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        MeetingProcessingLog.UseDirectory(Path.Combine(AppPaths.RootDirectory, "logs"));
         try
         {
             var viewModel = new MainViewModel(Services);

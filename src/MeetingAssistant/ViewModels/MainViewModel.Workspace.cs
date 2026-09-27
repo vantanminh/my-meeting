@@ -362,6 +362,7 @@ public sealed partial class MainViewModel
     internal void BindWorkspaceAfterConstruction()
     {
         InitializeWorkspaceCommands();
+        InitializeBackgroundState();
         _greetingPrefix = GreetingCopy.TimeOfDay(DateTimeOffset.Now);
         AppPaths.SetRecordingsDirectory(_savedPreferences.RecordingsDirectory);
         SelectedUpdatePolicy = _savedPreferences.UpdatePolicy.ToString();

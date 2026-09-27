@@ -13,6 +13,7 @@ public sealed class UserPreferences
     public bool SyncPaused { get; set; }
     public bool StartOnLogin { get; set; }
     public bool MinimizeToTrayOnClose { get; set; }
+    public double UiScale { get; set; } = 1.0;
     public bool OnboardingCompleted { get; set; }
     public string TranscriptionModel { get; set; } = "gpt-4o-transcribe";
     public string SummaryModel { get; set; } = OpenAiConfiguration.DefaultSummaryModel;

@@ -50,7 +50,12 @@ public interface IAudioCaptureService : IDisposable
     Task<DeviceTestResult> TestAsync(AudioConfiguration configuration, CancellationToken cancellationToken = default);
 }
 
-public sealed record ProcessingProgress(int Percent, int StageIndex, string Stage, string Message, bool ShowPercent = true);
+public sealed record ProcessingProgress(int Percent, int StageIndex, string Stage, string Message, bool ShowPercent = true)
+{
+    /// <summary>Composite-format template translated before formatting with <see cref="DetailArgs"/>.</summary>
+    public string? Detail { get; init; }
+    public object[] DetailArgs { get; init; } = [];
+}
 public sealed record ProcessingResult(Meeting Meeting);
 
 public sealed class MeetingProcessingRequest
@@ -99,10 +104,27 @@ public interface IGlobalHotkeyService : IDisposable
     void Attach(Window window);
 }
 
+public enum TrayState
+{
+    Idle,
+    Recording,
+    Processing,
+    Failed
+}
+
+public sealed class TrayActions
+{
+    public required Action ShowWindow { get; init; }
+    public required Action ToggleFlyout { get; init; }
+    public required Action ToggleRecording { get; init; }
+    public required Action Exit { get; init; }
+}
+
 public interface ITrayService : IDisposable
 {
-    void Initialize(Action showWindow, Action toggleRecording);
-    void SetRecordingState(bool isRecording, TimeSpan elapsed);
+    void Initialize(TrayActions actions);
+    void UpdateStatus(TrayState state, string tooltip);
+    void ShowNotification(string title, string message, bool isError = false);
 }
 
 public interface IUserPrompt

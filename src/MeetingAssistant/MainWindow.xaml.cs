@@ -23,12 +23,20 @@ public partial class MainWindow : Window
         DataContext = ViewModel;
         ViewModel.UsePrompt(new WindowUserPrompt());
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
+        ViewModel.ProcessingFinished += ViewModel_ProcessingFinished;
+        LocalizationService.LanguageChanged += LocalizationService_LanguageChanged;
     }
 
     public MainViewModel ViewModel { get; }
 
+    private const double BaseLayoutWidth = 760;
+    private const double BaseLayoutHeight = 520;
+
     private readonly IGlobalHotkeyService _hotkeyService;
     private readonly ITrayService _trayService;
+    private TrayFlyoutWindow? _trayFlyout;
+    private bool _exitRequested;
+    private bool _backgroundHintShown;
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
@@ -43,7 +51,14 @@ public partial class MainWindow : Window
     {
         MaximizedWindowPlacement.Attach(this);
         _hotkeyService.Attach(this);
-        _trayService.Initialize(ShowWindow, ViewModel.HandleGlobalHotkey);
+        _trayService.Initialize(new TrayActions
+        {
+            ShowWindow = ShowWindowFromTray,
+            ToggleFlyout = ToggleTrayFlyout,
+            ToggleRecording = ViewModel.HandleGlobalHotkey,
+            Exit = RequestExit
+        });
+        UpdateTrayStatus();
         ApplyNativeChrome();
         ViewModel.RefreshSystemStatus();
     }
@@ -90,6 +105,18 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (e.PropertyName is nameof(MainViewModel.BackgroundStatusSummary) or nameof(MainViewModel.BackgroundStatusTitle))
+        {
+            UpdateTrayStatus();
+            return;
+        }
+
+        if (e.PropertyName == nameof(MainViewModel.UiScale))
+        {
+            ApplyResponsiveLayout(ActualWidth, ActualHeight);
+            return;
+        }
+
         if (e.PropertyName is not (nameof(MainViewModel.CurrentView) or nameof(MainViewModel.IsAuthenticated)))
             return;
 
@@ -106,6 +133,11 @@ public partial class MainWindow : Window
         if (width <= 0 || height <= 0)
             return;
 
+        var scale = EffectiveScale(width, height);
+        ApplySurfaceScale(scale);
+        width /= scale;
+        height /= scale;
+
         var spacious = width >= 1600;
         var compact = width < 1080;
         var narrow = width < 920;
@@ -115,10 +147,9 @@ public partial class MainWindow : Window
 
         ApplyAuthLayout(authSingleColumn, compact);
         ApplySidebarLayout(compact, spacious);
-        RootGrid.LayoutTransform = spacious
-            ? new ScaleTransform(width >= 1900 ? 1.08 : 1.04, width >= 1900 ? 1.08 : 1.04)
-            : Transform.Identity;
+        if (!compact && shortWindow) SidebarStatusCard.Visibility = Visibility.Collapsed;
         ApplyHeaderLayout(compact, narrow, veryNarrow);
+        ApplySettingsTabsLayout(narrow, veryNarrow);
         StatusBar.Visibility = shortWindow ? Visibility.Collapsed : Visibility.Visible;
         StatusBarRow.Height = new GridLength(shortWindow ? 0 : 32);
 
@@ -139,6 +170,28 @@ public partial class MainWindow : Window
         ApplyDetailLayout(narrow);
         ApplySpeakersLayout(narrow);
     }
+
+    private double EffectiveScale(double width, double height)
+    {
+        var requested = ViewModel.UiScale;
+        if (Math.Abs(requested - 1.0) < 0.001 && width >= 1600)
+            requested = width >= 1900 ? 1.08 : 1.04;
+
+        // Zooming in must never push the layout below the smallest size it was designed for.
+        var widthLimit = Math.Max(1.0, width / BaseLayoutWidth);
+        var heightLimit = Math.Max(1.0, (height - 48) / BaseLayoutHeight);
+        return Math.Round(Math.Min(requested, Math.Min(widthLimit, heightLimit)), 3);
+    }
+
+    private void ApplySurfaceScale(double scale)
+    {
+        Transform transform = Math.Abs(scale - 1.0) < 0.001 ? Transform.Identity : new ScaleTransform(scale, scale);
+        AuthSurfaceGrid.LayoutTransform = transform;
+        AppSurfaceGrid.LayoutTransform = transform;
+    }
+
+    private void ApplySettingsTabsLayout(bool narrow, bool veryNarrow)
+        => SettingsTabsGrid.Columns = veryNarrow ? 2 : narrow ? 3 : 6;
 
     private void ApplyAuthLayout(bool singleColumn, bool compact)
     {
@@ -201,7 +254,7 @@ public partial class MainWindow : Window
         QuickStartButton.HorizontalContentAlignment = contentAlignment;
         AccountButton.HorizontalContentAlignment = contentAlignment;
 
-        var navPadding = compact ? new Thickness(8, 10, 8, 10) : new Thickness(13, 11, 13, 11);
+        var navPadding = compact ? new Thickness(0, 10, 0, 10) : new Thickness(13, 11, 13, 11);
         MeetingsNavButton.Padding = navPadding;
         SpeakersNavButton.Padding = navPadding;
         ActionsNavButton.Padding = navPadding;
@@ -398,17 +451,28 @@ public partial class MainWindow : Window
 
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
-        if (ViewModel.MinimizeToTrayOnClose && !ViewModel.IsConfirmingClose)
+        if (!_exitRequested && !ViewModel.IsConfirmingClose)
         {
-            e.Cancel = true;
-            Hide();
-            return;
+            if (ViewModel.IsProcessing)
+            {
+                e.Cancel = true;
+                HideToTray(showProcessingHint: true);
+                return;
+            }
+
+            if (ViewModel.MinimizeToTrayOnClose)
+            {
+                e.Cancel = true;
+                HideToTray(showProcessingHint: false);
+                return;
+            }
         }
 
         if (ViewModel.IsRecording || ViewModel.IsProcessing)
         {
             if (!ViewModel.ConfirmExit())
             {
+                _exitRequested = false;
                 e.Cancel = true;
                 return;
             }
@@ -422,8 +486,71 @@ public partial class MainWindow : Window
             }
         }
 
+        _trayFlyout?.Close();
+        _trayFlyout = null;
+        LocalizationService.LanguageChanged -= LocalizationService_LanguageChanged;
+        ViewModel.ProcessingFinished -= ViewModel_ProcessingFinished;
         ViewModel.PropertyChanged -= ViewModel_PropertyChanged;
         ViewModel.Dispose();
+    }
+
+    private void HideToTray(bool showProcessingHint)
+    {
+        _trayFlyout?.Hide();
+        Hide();
+        if (showProcessingHint && !_backgroundHintShown)
+        {
+            _backgroundHintShown = true;
+            _trayService.ShowNotification(
+                LocalizationService.Translate("Still processing in the background"),
+                LocalizationService.Translate("Meeting Assistant keeps working in the notification area and will let you know when the meeting is ready."));
+        }
+    }
+
+    public void RequestExit()
+    {
+        _trayFlyout?.Hide();
+        if (ViewModel.IsRecording || ViewModel.IsProcessing)
+            ShowWindow();
+        _exitRequested = true;
+        Close();
+    }
+
+    private void ShowWindowFromTray()
+    {
+        _trayFlyout?.Hide();
+        ViewModel.OpenCurrentMeetingFromTray();
+        ShowWindow();
+    }
+
+    private void ToggleTrayFlyout()
+    {
+        _trayFlyout ??= new TrayFlyoutWindow(ViewModel, ShowWindowFromTray, RequestExit);
+        _trayFlyout.Toggle();
+    }
+
+    private void UpdateTrayStatus()
+    {
+        var state = ViewModel.IsRecording ? TrayState.Recording
+            : ViewModel.IsProcessing ? TrayState.Processing
+            : ViewModel.ProcessingHasError ? TrayState.Failed
+            : TrayState.Idle;
+        _trayService.UpdateStatus(state, ViewModel.BackgroundStatusSummary);
+    }
+
+    private void LocalizationService_LanguageChanged(object? sender, EventArgs e)
+        => Dispatcher.BeginInvoke(UpdateTrayStatus);
+
+    private void ViewModel_ProcessingFinished(object? sender, ProcessingFinishedEventArgs e)
+    {
+        _backgroundHintShown = false;
+        UpdateTrayStatus();
+        if (IsVisible && IsActive) return;
+
+        var title = e.Succeeded
+            ? LocalizationService.Translate("Meeting ready")
+            : LocalizationService.Translate("Unable to process this meeting.");
+        _trayService.ShowNotification(title, $"{e.MeetingTitle} · {e.Message}", isError: !e.Succeeded);
     }
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -483,6 +610,12 @@ public partial class MainWindow : Window
 
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (Keyboard.Modifiers == ModifierKeys.Control && HandleZoomKey(e.Key))
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (ViewModel.CurrentView != WorkspaceView.Detail) return;
         if (e.OriginalSource is System.Windows.Controls.TextBox or System.Windows.Controls.PasswordBox)
             return;
@@ -504,6 +637,31 @@ public partial class MainWindow : Window
         }
     }
 
+    private bool HandleZoomKey(Key key)
+    {
+        switch (key)
+        {
+            case Key.OemPlus or Key.Add:
+                ViewModel.StepUiScale(+1);
+                return true;
+            case Key.OemMinus or Key.Subtract:
+                ViewModel.StepUiScale(-1);
+                return true;
+            case Key.D0 or Key.NumPad0:
+                ViewModel.UiScale = 1.0;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private void Window_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (Keyboard.Modifiers != ModifierKeys.Control || e.Delta == 0) return;
+        ViewModel.StepUiScale(e.Delta > 0 ? +1 : -1);
+        e.Handled = true;
+    }
+
     private void ShowWindow()
     {
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
@@ -518,7 +676,11 @@ public partial class MainWindow : Window
 public sealed class WindowUserPrompt : IUserPrompt
 {
     public bool Confirm(string title, string message)
-        => System.Windows.MessageBox.Show(message, title, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
+        => System.Windows.MessageBox.Show(
+            LocalizationService.Translate(message),
+            LocalizationService.Translate(title),
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question) == MessageBoxResult.Yes;
 
     public string? SaveFile(string title, string filter, string defaultName)
     {

@@ -404,6 +404,7 @@ public sealed partial class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(ShowPauseButton));
             OnPropertyChanged(nameof(ShowResumeButton));
             RefreshUpdateAvailability();
+            RaiseBackgroundStatusChanged();
         }
     }
     public bool IsPaused
@@ -417,6 +418,7 @@ public sealed partial class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(RecordingIndicatorLabel));
             OnPropertyChanged(nameof(ShowPauseButton));
             OnPropertyChanged(nameof(ShowResumeButton));
+            RaiseBackgroundStatusChanged();
         }
     }
     public bool IsStopping
@@ -429,7 +431,14 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
     public string RecordingStatus { get => LocalizationService.Translate(_recordingStatus); private set => SetProperty(ref _recordingStatus, value); }
-    public string ElapsedLabel { get => _elapsedLabel; private set => SetProperty(ref _elapsedLabel, value); }
+    public string ElapsedLabel
+    {
+        get => _elapsedLabel;
+        private set
+        {
+            if (SetProperty(ref _elapsedLabel, value)) OnPropertyChanged(nameof(BackgroundStatusSummary));
+        }
+    }
     public string ActiveSpeaker { get => LocalizationService.Translate(_activeSpeaker); private set => SetProperty(ref _activeSpeaker, value); }
     public double MicrophoneLevel { get => _microphoneLevel; private set => SetProperty(ref _microphoneLevel, value); }
     public double SystemAudioLevel { get => _systemAudioLevel; private set => SetProperty(ref _systemAudioLevel, value); }
@@ -463,7 +472,14 @@ public sealed partial class MainViewModel : ViewModelBase
     public bool ShowMissingNotes => CurrentMeeting is not null && !IsViewingActiveProcessing && !HasMeetingNotes;
     public bool IsViewingActiveProcessing => IsProcessing && CurrentMeeting is not null && string.Equals(CurrentMeeting.Id, _activeProcessingMeetingId, StringComparison.OrdinalIgnoreCase);
     public bool ShowWaitingToProcess => CurrentMeeting is not null && !IsViewingActiveProcessing && IsMeetingBusy(CurrentMeeting.Id);
-    public string ProcessingElapsedLabel { get => _processingElapsedLabel; private set => SetProperty(ref _processingElapsedLabel, value); }
+    public string ProcessingElapsedLabel
+    {
+        get => _processingElapsedLabel;
+        private set
+        {
+            if (SetProperty(ref _processingElapsedLabel, value)) OnPropertyChanged(nameof(BackgroundStatusSummary));
+        }
+    }
     public string BackgroundProcessingLabel => IsProcessing
         ? $"{ActiveProcessingTitle} · {ProcessingStage}"
         : string.Empty;
@@ -499,6 +515,7 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             if (!SetProperty(ref _processingStage, value)) return;
             OnPropertyChanged(nameof(BackgroundProcessingLabel));
+            OnPropertyChanged(nameof(BackgroundStatusSummary));
         }
     }
     public string ProcessingMessage { get => LocalizationService.Translate(_processingMessage); private set => SetProperty(ref _processingMessage, value); }
@@ -520,9 +537,17 @@ public sealed partial class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(ShowMissingNotes));
             OnPropertyChanged(nameof(ShowWaitingToProcess));
             RefreshUpdateAvailability();
+            OnProcessingStateChanged();
         }
     }
-    public bool ProcessingHasError { get => _processingHasError; private set => SetProperty(ref _processingHasError, value); }
+    public bool ProcessingHasError
+    {
+        get => _processingHasError;
+        private set
+        {
+            if (SetProperty(ref _processingHasError, value)) RaiseBackgroundStatusChanged();
+        }
+    }
     public bool ShowProcessingPercent { get => _showProcessingPercent; private set => SetProperty(ref _showProcessingPercent, value); }
 
     public string TranscriptSpeakerFilter
@@ -738,7 +763,8 @@ public sealed partial class MainViewModel : ViewModelBase
             nameof(HotkeyStatus), nameof(ToastMessage), nameof(LastSyncLabel), nameof(PageTitle), nameof(PageDescription),
             nameof(OpenAiKeyStatus), nameof(AssemblyAiKeyStatus), nameof(OpenAiConnectionStatus), nameof(OpenAiProviderLabel), nameof(UpdateChannelLabel),
             nameof(UpdateStatus), nameof(UpdateStageLabel), nameof(UpdateProgressDetail), nameof(UpdateVersionDescription),
-            nameof(GreetingPrefix), nameof(PlaybackStatus), nameof(LastSyncLabel),
+            nameof(GreetingPrefix), nameof(PlaybackStatus), nameof(LastSyncLabel), nameof(ProcessingDetail),
+            nameof(BackgroundStatusTitle), nameof(BackgroundStatusSummary),
             nameof(MeetingNotesSummary), nameof(BackgroundProcessingLabel), nameof(ProcessingElapsedLabel)
         })
         {
@@ -1098,7 +1124,6 @@ public sealed partial class MainViewModel : ViewModelBase
         IsRecording = true;
         CurrentView = WorkspaceView.Recording;
         _recordingTimer.Start();
-        _services.TrayService.SetRecordingState(true, TimeSpan.Zero);
     }
 
     private async Task PauseRecordingAsync()
@@ -1126,7 +1151,6 @@ public sealed partial class MainViewModel : ViewModelBase
         IsRecording = false;
         IsPaused = false;
         IsStopping = false;
-        _services.TrayService.SetRecordingState(false, recording.Duration);
         _lastRecording = recording;
         var meeting = EnsureProcessingMeeting(recording);
         meeting.Status = MeetingStatus.Processing;
@@ -1232,6 +1256,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 if (meeting is null || recording is null)
                     continue;
 
+                ProcessingMeetingTitle = meeting.Title;
                 _processingStartedAt = DateTimeOffset.Now;
                 ProcessingElapsedLabel = "0:00";
                 ProcessingHasError = false;
@@ -1307,6 +1332,7 @@ public sealed partial class MainViewModel : ViewModelBase
         ProcessingStageIndex = 0;
         ProcessingStage = "Recording saved";
         ProcessingMessage = "The audio files are on this computer. Preparing them for transcription.";
+        SetProcessingDetail(null, null);
         ResetProcessingSteps();
         UpdateProcessingSteps(0);
         RefreshVisibleMeetings();
@@ -1319,6 +1345,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 ProcessingStageIndex = value.StageIndex;
                 ProcessingStage = value.Stage;
                 ProcessingMessage = value.Message;
+                SetProcessingDetail(value.Detail, value.DetailArgs);
                 UpdateProcessingSteps(value.StageIndex);
                 RefreshVisibleMeetings();
                 NotifyProcessingChrome();
@@ -1357,7 +1384,9 @@ public sealed partial class MainViewModel : ViewModelBase
             UpdateProcessingSteps(6);
             RefreshVisibleMeetings();
             RevealMeetingIfOpen(result.Meeting);
+            SetProcessingDetail(null, null);
             ShowTimedToast("Meeting ready. The transcript and notes are saved on this computer.");
+            RaiseProcessingFinished(true, result.Meeting, LocalizationService.Translate("Meeting ready. The transcript and notes are saved on this computer."), opened: IsShowingMeeting(result.Meeting));
         }
         catch (OperationCanceledException)
         {
@@ -1378,6 +1407,7 @@ public sealed partial class MainViewModel : ViewModelBase
             ProcessingStage = "Unable to process this meeting.";
             ProcessingMessage = exception.Message;
             await RememberFailedRecordingAsync(meeting, exception.Message);
+            RaiseProcessingFinished(false, meeting, ProcessingMessage, opened: false);
         }
         catch (OpenAiServiceException exception)
         {
@@ -1385,13 +1415,16 @@ public sealed partial class MainViewModel : ViewModelBase
             ProcessingStage = "Unable to process this meeting.";
             ProcessingMessage = exception.Message;
             await RememberFailedRecordingAsync(meeting, exception.Message);
+            RaiseProcessingFinished(false, meeting, ProcessingMessage, opened: false);
         }
-        catch (Exception)
+        catch (Exception exception)
         {
+            MeetingProcessingLog.Write("meeting_processing_unexpected", meeting.Id, "app", "failed", null, exception.GetType().Name + ": " + exception.Message);
             ProcessingHasError = true;
             ProcessingStage = "Unable to process this meeting.";
             ProcessingMessage = "The meeting stays available locally. Check your connection or retry.";
             await RememberFailedRecordingAsync(meeting, "The meeting stays available locally. Check your connection or retry.");
+            RaiseProcessingFinished(false, meeting, ProcessingMessage, opened: false);
         }
     }
 
@@ -1521,7 +1554,6 @@ public sealed partial class MainViewModel : ViewModelBase
         var elapsed = _audio.Elapsed;
         ElapsedLabel = elapsed.ToString(elapsed.TotalHours >= 1 ? @"h\:mm\:ss" : @"mm\:ss");
         WarnIfLongRecording(elapsed);
-        _services.TrayService.SetRecordingState(true, elapsed);
     }
 
     private void OnAudioLevelsChanged(object? sender, AudioLevelsEventArgs args)
