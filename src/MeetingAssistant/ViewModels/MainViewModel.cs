@@ -81,6 +81,13 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly IUpdateChannelService _updates;
     private readonly DispatcherTimer _recordingTimer;
     private readonly DispatcherTimer _updateCheckTimer;
+    private readonly DispatcherTimer _processingTimer;
+    private readonly Queue<string> _processingOrder = new();
+    private readonly Dictionary<string, RecordingData> _processingRecordings = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _processingGate = new();
+    private int _processingWorker;
+    private string? _activeProcessingMeetingId;
+    private DateTimeOffset _processingStartedAt;
     private CancellationTokenSource? _processingCancellation;
     private CancellationTokenSource? _updateCheckCancellation;
     private CancellationTokenSource? _updateCancellation;
@@ -190,6 +197,8 @@ public sealed partial class MainViewModel : ViewModelBase
 
         _recordingTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _recordingTimer.Tick += (_, _) => UpdateRecordingClock();
+        _processingTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _processingTimer.Tick += (_, _) => RefreshProcessingElapsed();
         _updateCheckTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(6) };
         _updateCheckTimer.Tick += (_, _) => _ = CheckForUpdatesAsync(silent: true);
         _audio.LevelsChanged += OnAudioLevelsChanged;
@@ -219,12 +228,13 @@ public sealed partial class MainViewModel : ViewModelBase
         ForgotPasswordCommand = new AsyncRelayCommand(RequestPasswordResetAsync, () => !IsAuthenticating);
         SignOutCommand = new AsyncRelayCommand(SignOutAsync);
         TestDevicesCommand = new AsyncRelayCommand(TestDevicesAsync, () => !IsTestingDevices);
-        StartRecordingCommand = new AsyncRelayCommand(StartRecordingAsync, () => !IsRecording && !IsProcessing && !IsInstallingUpdate);
+        StartRecordingCommand = new AsyncRelayCommand(StartRecordingAsync, () => !IsRecording && !IsInstallingUpdate);
         PauseRecordingCommand = new AsyncRelayCommand(PauseRecordingAsync, () => IsRecording && !IsStopping);
         ResumeRecordingCommand = new AsyncRelayCommand(ResumeRecordingAsync, () => IsRecording && IsPaused && !IsStopping);
         StopRecordingCommand = new AsyncRelayCommand(StopRecordingAsync, () => IsRecording && !IsStopping);
-        RetryProcessingCommand = new AsyncRelayCommand(RetryProcessingAsync, () => !IsProcessing && CanRetryProcessing());
+        RetryProcessingCommand = new AsyncRelayCommand(RetryProcessingAsync, CanRetryProcessing);
         CancelProcessingCommand = new RelayCommand(_ => CancelProcessing(), _ => IsProcessing);
+        OpenActiveProcessingCommand = new RelayCommand(_ => OpenActiveProcessing(), _ => IsProcessing);
         SaveMeetingCommand = new AsyncRelayCommand(SaveMeetingAsync, () => CurrentMeeting is not null);
         SetTranscriptFilterCommand = new RelayCommand(parameter => SetTranscriptFilter(parameter as string ?? "All speakers"));
         SaveSpeakerCommand = new AsyncRelayCommand(SaveSpeakerAsync, () => true);
@@ -266,6 +276,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public AsyncRelayCommand StopRecordingCommand { get; }
     public AsyncRelayCommand RetryProcessingCommand { get; }
     public RelayCommand CancelProcessingCommand { get; }
+    public RelayCommand OpenActiveProcessingCommand { get; }
     public AsyncRelayCommand SaveMeetingCommand { get; }
     public ICommand SetTranscriptFilterCommand { get; }
     public AsyncRelayCommand SaveSpeakerCommand { get; }
@@ -444,13 +455,57 @@ public sealed partial class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(CurrentMeetingTitle));
             OnPropertyChanged(nameof(MeetingNeedsRetry));
             OnPropertyChanged(nameof(ProcessingFailureLabel));
+            OnPropertyChanged(nameof(HasMeetingNotes));
+            OnPropertyChanged(nameof(ShowMissingNotes));
+            OnPropertyChanged(nameof(MeetingNotesSummary));
+            OnPropertyChanged(nameof(IsViewingActiveProcessing));
+            OnPropertyChanged(nameof(ShowWaitingToProcess));
             SaveMeetingCommand.RaiseCanExecuteChanged();
             RetryProcessingCommand.RaiseCanExecuteChanged();
+            ResummarizeCommand.RaiseCanExecuteChanged();
         }
     }
 
     public bool MeetingNeedsRetry => CurrentMeeting?.ProcessingPhase == ProcessingPhase.Failed;
     public string ProcessingFailureLabel => CurrentMeeting?.ProcessingError ?? string.Empty;
+    public bool HasMeetingNotes => !string.IsNullOrWhiteSpace(CurrentMeeting?.Summary?.Overview);
+    public bool ShowMissingNotes => CurrentMeeting is not null && !IsViewingActiveProcessing && !HasMeetingNotes;
+    public bool IsViewingActiveProcessing => IsProcessing && CurrentMeeting is not null && string.Equals(CurrentMeeting.Id, _activeProcessingMeetingId, StringComparison.OrdinalIgnoreCase);
+    public bool ShowWaitingToProcess => CurrentMeeting is not null && !IsViewingActiveProcessing && IsMeetingBusy(CurrentMeeting.Id);
+    public string ProcessingElapsedLabel
+    {
+        get => _processingElapsedLabel;
+        private set
+        {
+            if (SetProperty(ref _processingElapsedLabel, value)) OnPropertyChanged(nameof(BackgroundStatusSummary));
+        }
+    }
+    public string BackgroundProcessingLabel => IsProcessing
+        ? $"{ActiveProcessingTitle} · {ProcessingStage}"
+        : string.Empty;
+    public string MeetingNotesSummary
+    {
+        get
+        {
+            var summary = CurrentMeeting?.Summary;
+            if (summary is null || string.IsNullOrWhiteSpace(summary.Overview))
+            {
+                return LocalizationService.Translate(CurrentMeeting?.Transcript.Count > 0
+                    ? "The transcript is saved. Meeting notes have not been written yet."
+                    : "Meeting notes appear here after the recording is processed.");
+            }
+
+            var points = summary.KeyPoints?.Count ?? 0;
+            var decisions = summary.Decisions?.Count ?? 0;
+            var actions = summary.ActionItems?.Count ?? 0;
+            var questions = summary.Questions?.Count ?? 0;
+            return $"{points} {LocalizationService.Translate("key points")} · {decisions} {LocalizationService.Translate("decisions")} · {actions} {LocalizationService.Translate("action items")} · {questions} {LocalizationService.Translate("open questions")}";
+        }
+    }
+    private string ActiveProcessingTitle
+        => Meetings.FirstOrDefault(meeting => string.Equals(meeting.Id, _activeProcessingMeetingId, StringComparison.OrdinalIgnoreCase))?.Title
+            ?? "Meeting";
+    private string _processingElapsedLabel = "0:00";
     public string CurrentMeetingTitle => CurrentMeeting?.Title ?? LocalizationService.Translate("Meeting");
 
     public string ProcessingStage
@@ -458,7 +513,9 @@ public sealed partial class MainViewModel : ViewModelBase
         get => LocalizationService.Translate(_processingStage);
         private set
         {
-            if (SetProperty(ref _processingStage, value)) OnPropertyChanged(nameof(BackgroundStatusSummary));
+            if (!SetProperty(ref _processingStage, value)) return;
+            OnPropertyChanged(nameof(BackgroundProcessingLabel));
+            OnPropertyChanged(nameof(BackgroundStatusSummary));
         }
     }
     public string ProcessingMessage { get => LocalizationService.Translate(_processingMessage); private set => SetProperty(ref _processingMessage, value); }
@@ -472,7 +529,13 @@ public sealed partial class MainViewModel : ViewModelBase
             if (!SetProperty(ref _isProcessing, value)) return;
             RetryProcessingCommand.RaiseCanExecuteChanged();
             CancelProcessingCommand.RaiseCanExecuteChanged();
+            OpenActiveProcessingCommand.RaiseCanExecuteChanged();
             StartRecordingCommand.RaiseCanExecuteChanged();
+            ResummarizeCommand.RaiseCanExecuteChanged();
+            OnPropertyChanged(nameof(BackgroundProcessingLabel));
+            OnPropertyChanged(nameof(IsViewingActiveProcessing));
+            OnPropertyChanged(nameof(ShowMissingNotes));
+            OnPropertyChanged(nameof(ShowWaitingToProcess));
             RefreshUpdateAvailability();
             OnProcessingStateChanged();
         }
@@ -492,7 +555,15 @@ public sealed partial class MainViewModel : ViewModelBase
         get => _transcriptSpeakerFilter;
         private set => SetProperty(ref _transcriptSpeakerFilter, value);
     }
-    public bool IsLoadingMeetings { get => _isLoadingMeetings; private set => SetProperty(ref _isLoadingMeetings, value); }
+    public bool IsLoadingMeetings
+    {
+        get => _isLoadingMeetings;
+        private set
+        {
+            if (!SetProperty(ref _isLoadingMeetings, value)) return;
+            ScanRecordingsCommand.RaiseCanExecuteChanged();
+        }
+    }
 
     public bool SyncPaused
     {
@@ -693,7 +764,8 @@ public sealed partial class MainViewModel : ViewModelBase
             nameof(OpenAiKeyStatus), nameof(AssemblyAiKeyStatus), nameof(OpenAiConnectionStatus), nameof(OpenAiProviderLabel), nameof(UpdateChannelLabel),
             nameof(UpdateStatus), nameof(UpdateStageLabel), nameof(UpdateProgressDetail), nameof(UpdateVersionDescription),
             nameof(GreetingPrefix), nameof(PlaybackStatus), nameof(LastSyncLabel), nameof(ProcessingDetail),
-            nameof(BackgroundStatusTitle), nameof(BackgroundStatusSummary)
+            nameof(BackgroundStatusTitle), nameof(BackgroundStatusSummary),
+            nameof(MeetingNotesSummary), nameof(BackgroundProcessingLabel), nameof(ProcessingElapsedLabel)
         })
         {
             OnPropertyChanged(propertyName);
@@ -839,17 +911,30 @@ public sealed partial class MainViewModel : ViewModelBase
             await _repository.SaveAsync(meetings);
         }
 
+        var interrupted = RecordingRecovery.MarkInterrupted(meetings);
+        var recovered = RecordingRecovery.RecoverMissing(AppPaths.RecordingsDirectory, meetings);
+        if (recovered.Count > 0)
+        {
+            foreach (var meeting in recovered)
+                meeting.OwnerUserId ??= CurrentUser?.UserId;
+            meetings.AddRange(recovered);
+        }
+
+        if (interrupted > 0 || recovered.Count > 0)
+            await _repository.SaveAsync(meetings);
+
         Meetings.Clear();
         foreach (var meeting in meetings.OrderByDescending(m => m.StartedAt))
         {
-            meeting.Summary ??= new MeetingSummary();
-            meeting.Summary.ImportantMoments ??= [];
-            meeting.Speakers ??= [];
-            meeting.Transcript ??= [];
+            meeting.EnsureCollections();
             Meetings.Add(meeting);
         }
         RefreshVisibleMeetings();
         IsLoadingMeetings = false;
+        if (recovered.Count > 0)
+            ShowTimedToast(recovered.Count == 1
+                ? "Found 1 saved recording that can be processed again."
+                : $"Found {recovered.Count} saved recordings that can be processed again.");
     }
 
     private static List<Meeting> MergeMeetings(IEnumerable<Meeting> localMeetings, IEnumerable<Meeting> cloudMeetings)
@@ -1067,54 +1152,190 @@ public sealed partial class MainViewModel : ViewModelBase
         IsPaused = false;
         IsStopping = false;
         _lastRecording = recording;
-        _processingCancellation?.Dispose();
-        _processingCancellation = new CancellationTokenSource();
-        CurrentView = WorkspaceView.Processing;
-        await ProcessRecordingAsync(_processingCancellation.Token);
+        var meeting = EnsureProcessingMeeting(recording);
+        meeting.Status = MeetingStatus.Processing;
+        meeting.ProcessingPhase = ProcessingPhase.Queued;
+        meeting.ProcessingError = null;
+        meeting.UpdatedAt = DateTimeOffset.Now;
+        await _repository.SaveAsync(Meetings);
+        RefreshVisibleMeetings();
+        CurrentMeeting = meeting;
+        BuildDetailState(meeting);
+        CurrentView = WorkspaceView.Detail;
+        ShowTimedToast("Processing continues in the background. You can start another recording.");
+        EnqueueProcessing(meeting, recording);
     }
 
     private async Task RetryProcessingAsync()
     {
-        if (CurrentMeeting?.ProcessingPhase == ProcessingPhase.Failed)
-            _lastRecording = RecordingFromMeeting(CurrentMeeting);
-        if (_lastRecording is null) return;
-        _processingCancellation?.Dispose();
-        _processingCancellation = new CancellationTokenSource();
-        ProcessingHasError = false;
-        IsProcessing = true;
-        CurrentView = WorkspaceView.Processing;
-        await ProcessRecordingAsync(_processingCancellation.Token);
-    }
-
-    private bool CanRetryProcessing()
-        => _lastRecording is not null || CurrentMeeting?.ProcessingPhase == ProcessingPhase.Failed;
-
-    private async Task ProcessRecordingAsync(CancellationToken cancellationToken)
-    {
-        if (_lastRecording is null && CurrentMeeting is not null)
-            _lastRecording = RecordingFromMeeting(CurrentMeeting);
-        if (_lastRecording is null) return;
-
-        var meeting = EnsureProcessingMeeting(_lastRecording);
-        if (meeting.ProcessingPhase == ProcessingPhase.Completed && meeting.Transcript.Count > 0)
+        var meeting = CurrentMeeting;
+        if (meeting is null || IsMeetingBusy(meeting.Id)) return;
+        var recording = RecordingFromMeeting(meeting);
+        if (!RecordingRecovery.IsUsableAudio(recording.MicrophonePath) && !RecordingRecovery.IsUsableAudio(recording.SystemAudioPath))
         {
-            IsProcessing = false;
-            ProcessingHasError = false;
-            CurrentMeeting = meeting;
-            BuildDetailState(meeting);
-            CurrentView = WorkspaceView.Detail;
+            ShowTimedToast("The recording audio is no longer on this computer.");
             return;
         }
 
-        ProcessingMeetingTitle = meeting.Title;
-        IsProcessing = true;
+        meeting.Status = MeetingStatus.Processing;
+        meeting.ProcessingPhase = ProcessingPhase.Queued;
+        meeting.ProcessingError = null;
+        meeting.UpdatedAt = DateTimeOffset.Now;
+        await _repository.SaveAsync(Meetings);
+        RefreshVisibleMeetings();
+        BuildDetailState(meeting);
+        OnPropertyChanged(nameof(MeetingNeedsRetry));
+        OnPropertyChanged(nameof(ShowMissingNotes));
+        EnqueueProcessing(meeting, recording);
+    }
+
+    private bool CanRetryProcessing()
+    {
+        var meeting = CurrentMeeting;
+        if (meeting is null || IsMeetingBusy(meeting.Id)) return false;
+        if (meeting.ProcessingPhase == ProcessingPhase.Completed
+            && meeting.Transcript.Count > 0
+            && !string.IsNullOrWhiteSpace(meeting.Summary.Overview))
+            return false;
+        return RecordingRecovery.IsUsableAudio(meeting.MicrophonePath)
+            || RecordingRecovery.IsUsableAudio(meeting.SystemAudioPath);
+    }
+
+    private bool IsMeetingBusy(string meetingId)
+    {
+        lock (_processingGate)
+        {
+            if (string.Equals(_activeProcessingMeetingId, meetingId, StringComparison.OrdinalIgnoreCase))
+                return true;
+            return _processingOrder.Contains(meetingId, StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private void EnqueueProcessing(Meeting meeting, RecordingData recording)
+    {
+        lock (_processingGate)
+        {
+            if (string.Equals(_activeProcessingMeetingId, meeting.Id, StringComparison.OrdinalIgnoreCase))
+                return;
+            if (_processingOrder.Contains(meeting.Id, StringComparer.OrdinalIgnoreCase))
+                return;
+            _processingRecordings[meeting.Id] = recording;
+            _processingOrder.Enqueue(meeting.Id);
+        }
+
+        _ = PumpProcessingAsync();
+        NotifyProcessingChrome();
+    }
+
+    private async Task PumpProcessingAsync()
+    {
+        if (Interlocked.CompareExchange(ref _processingWorker, 1, 0) != 0)
+            return;
+
+        var pending = false;
+        try
+        {
+            while (true)
+            {
+                string meetingId;
+                RecordingData? recording;
+                lock (_processingGate)
+                {
+                    if (!_processingOrder.TryDequeue(out var dequeued))
+                    {
+                        _activeProcessingMeetingId = null;
+                        break;
+                    }
+
+                    meetingId = dequeued;
+                    _processingRecordings.Remove(meetingId, out recording);
+                    _activeProcessingMeetingId = meetingId;
+                }
+
+                var meeting = Meetings.FirstOrDefault(item => string.Equals(item.Id, meetingId, StringComparison.OrdinalIgnoreCase));
+                if (meeting is null || recording is null)
+                    continue;
+
+                ProcessingMeetingTitle = meeting.Title;
+                _processingStartedAt = DateTimeOffset.Now;
+                ProcessingElapsedLabel = "0:00";
+                ProcessingHasError = false;
+                ShowProcessingPercent = false;
+                _processingTimer.Start();
+                IsProcessing = true;
+                NotifyProcessingChrome();
+
+                var cancellation = new CancellationTokenSource();
+                _processingCancellation = cancellation;
+                try
+                {
+                    await ProcessRecordingAsync(meeting, recording, cancellation.Token);
+                }
+                finally
+                {
+                    if (ReferenceEquals(_processingCancellation, cancellation))
+                        _processingCancellation = null;
+                    cancellation.Dispose();
+                }
+            }
+        }
+        finally
+        {
+            lock (_processingGate)
+            {
+                pending = _processingOrder.Count > 0;
+                if (!pending)
+                    _activeProcessingMeetingId = null;
+            }
+
+            if (!pending)
+            {
+                _processingTimer.Stop();
+                IsProcessing = false;
+                NotifyProcessingChrome();
+            }
+
+            Interlocked.Exchange(ref _processingWorker, 0);
+        }
+
+        if (pending)
+            _ = PumpProcessingAsync();
+    }
+
+    private void NotifyProcessingChrome()
+    {
+        OnPropertyChanged(nameof(BackgroundProcessingLabel));
+        OnPropertyChanged(nameof(IsViewingActiveProcessing));
+        OnPropertyChanged(nameof(ShowMissingNotes));
+        OnPropertyChanged(nameof(ShowWaitingToProcess));
+        OnPropertyChanged(nameof(MeetingNeedsRetry));
+        RetryProcessingCommand.RaiseCanExecuteChanged();
+        ResummarizeCommand.RaiseCanExecuteChanged();
+    }
+
+    private void RefreshProcessingElapsed()
+    {
+        if (string.IsNullOrEmpty(_activeProcessingMeetingId)) return;
+        var elapsed = DateTimeOffset.Now - _processingStartedAt;
+        if (elapsed < TimeSpan.Zero) elapsed = TimeSpan.Zero;
+        var label = elapsed.TotalHours >= 1 ? elapsed.ToString(@"h\:mm\:ss") : elapsed.ToString(@"m\:ss");
+        if (!string.Equals(label, _processingElapsedLabel, StringComparison.Ordinal))
+            ProcessingElapsedLabel = label;
+    }
+
+    private async Task ProcessRecordingAsync(Meeting meeting, RecordingData recording, CancellationToken cancellationToken)
+    {
+        meeting.EnsureCollections();
         ProcessingHasError = false;
         ShowProcessingPercent = false;
         ProcessingPercent = 0;
         ProcessingStageIndex = 0;
-        ProcessingStage = "Processing recording...";
-        ProcessingMessage = "Processing recording...";
+        ProcessingStage = "Recording saved";
+        ProcessingMessage = "The audio files are on this computer. Preparing them for transcription.";
         SetProcessingDetail(null, null);
+        ResetProcessingSteps();
+        UpdateProcessingSteps(0);
+        RefreshVisibleMeetings();
         try
         {
             var progress = new Progress<ProcessingProgress>(value =>
@@ -1126,11 +1347,12 @@ public sealed partial class MainViewModel : ViewModelBase
                 ProcessingMessage = value.Message;
                 SetProcessingDetail(value.Detail, value.DetailArgs);
                 UpdateProcessingSteps(value.StageIndex);
+                RefreshVisibleMeetings();
+                NotifyProcessingChrome();
             });
-            ResetProcessingSteps();
             var result = await _intelligence.ProcessMeetingAsync(new MeetingProcessingRequest
             {
-                Recording = _lastRecording,
+                Recording = recording,
                 Meeting = meeting,
                 TranscriptionLanguage = TranscriptionLanguage,
                 Persist = async (updated, token) =>
@@ -1143,11 +1365,11 @@ public sealed partial class MainViewModel : ViewModelBase
                 StillExists = () => Meetings.Any(item => item.Id == meeting.Id)
             }, progress, cancellationToken);
             result.Meeting.OwnerUserId ??= CurrentUser?.UserId;
-            result.Meeting.MicrophonePath ??= _lastRecording.MicrophonePath;
-            result.Meeting.SystemAudioPath ??= _lastRecording.SystemAudioPath;
-            result.Meeting.SessionDirectory ??= _lastRecording.SessionDirectory;
+            result.Meeting.MicrophonePath ??= recording.MicrophonePath;
+            result.Meeting.SystemAudioPath ??= recording.SystemAudioPath;
+            result.Meeting.SessionDirectory ??= recording.SessionDirectory;
             if (!KeepLocalCopy && result.Meeting.ProcessingPhase == ProcessingPhase.Completed)
-                RecordingSafety.DeleteSessionAudio(_lastRecording);
+                RecordingSafety.DeleteSessionAudio(recording);
             var sync = await _cloud.SyncAsync(result.Meeting, cancellationToken);
             result.Meeting.SyncStatus = sync.Label;
             result.Meeting.SyncState = sync.Success && sync.Label.Contains("Firebase", StringComparison.OrdinalIgnoreCase)
@@ -1159,36 +1381,28 @@ public sealed partial class MainViewModel : ViewModelBase
                 await _outbox.EnqueueAsync(result.Meeting.Id);
             if (!Meetings.Contains(result.Meeting)) Meetings.Insert(0, result.Meeting);
             await _repository.SaveAsync(Meetings);
+            UpdateProcessingSteps(6);
             RefreshVisibleMeetings();
-            var followResult = CurrentView == WorkspaceView.Processing;
-            if (followResult)
-            {
-                CurrentMeeting = result.Meeting;
-                BuildDetailState(result.Meeting);
-            }
-            IsProcessing = false;
+            RevealMeetingIfOpen(result.Meeting);
             SetProcessingDetail(null, null);
-            if (followResult) CurrentView = WorkspaceView.Detail;
-            ShowTimedToast("Meeting ready · transcript and summary are saved locally");
-            RaiseProcessingFinished(true, result.Meeting, LocalizationService.Translate("Meeting ready · transcript and summary are saved locally"), opened: followResult);
+            ShowTimedToast("Meeting ready. The transcript and notes are saved on this computer.");
+            RaiseProcessingFinished(true, result.Meeting, LocalizationService.Translate("Meeting ready. The transcript and notes are saved on this computer."), opened: IsShowingMeeting(result.Meeting));
         }
         catch (OperationCanceledException)
         {
-            IsProcessing = false;
             ProcessingHasError = true;
             ProcessingStage = "Processing paused";
-            ProcessingMessage = "Your capture is still available. Retry whenever you are ready.";
+            ProcessingMessage = "Processing paused. The recording stays on this computer and can be retried.";
             await RememberFailedRecordingAsync(meeting, "Processing was cancelled.");
         }
         catch (MeetingProcessingException exception) when (exception.MeetingDeleted)
         {
-            IsProcessing = false;
             ProcessingHasError = false;
-            CurrentView = WorkspaceView.Dashboard;
+            if (!IsRecording)
+                CurrentView = WorkspaceView.Dashboard;
         }
         catch (MeetingProcessingException exception)
         {
-            IsProcessing = false;
             ProcessingHasError = true;
             ProcessingStage = "Unable to process this meeting.";
             ProcessingMessage = exception.Message;
@@ -1197,7 +1411,6 @@ public sealed partial class MainViewModel : ViewModelBase
         }
         catch (OpenAiServiceException exception)
         {
-            IsProcessing = false;
             ProcessingHasError = true;
             ProcessingStage = "Unable to process this meeting.";
             ProcessingMessage = exception.Message;
@@ -1207,13 +1420,27 @@ public sealed partial class MainViewModel : ViewModelBase
         catch (Exception exception)
         {
             MeetingProcessingLog.Write("meeting_processing_unexpected", meeting.Id, "app", "failed", null, exception.GetType().Name + ": " + exception.Message);
-            IsProcessing = false;
             ProcessingHasError = true;
             ProcessingStage = "Unable to process this meeting.";
             ProcessingMessage = "The meeting stays available locally. Check your connection or retry.";
-            await RememberFailedRecordingAsync(meeting, ProcessingMessage);
+            await RememberFailedRecordingAsync(meeting, "The meeting stays available locally. Check your connection or retry.");
             RaiseProcessingFinished(false, meeting, ProcessingMessage, opened: false);
         }
+    }
+
+    private void RevealMeetingIfOpen(Meeting meeting)
+    {
+        if (CurrentMeeting is null || !string.Equals(CurrentMeeting.Id, meeting.Id, StringComparison.OrdinalIgnoreCase))
+            return;
+        CurrentMeeting = meeting;
+        BuildDetailState(meeting);
+        OnPropertyChanged(nameof(HasMeetingNotes));
+        OnPropertyChanged(nameof(ShowMissingNotes));
+        OnPropertyChanged(nameof(MeetingNotesSummary));
+        OnPropertyChanged(nameof(MeetingNeedsRetry));
+        OnPropertyChanged(nameof(ProcessingFailureLabel));
+        if (!IsRecording)
+            CurrentView = WorkspaceView.Detail;
     }
 
     private Meeting EnsureProcessingMeeting(RecordingData recording)
@@ -1275,16 +1502,50 @@ public sealed partial class MainViewModel : ViewModelBase
         if (!Meetings.Contains(meeting)) Meetings.Insert(0, meeting);
         await _repository.SaveAsync(Meetings);
         RefreshVisibleMeetings();
-        CurrentMeeting = meeting;
-        OnPropertyChanged(nameof(MeetingNeedsRetry));
-        OnPropertyChanged(nameof(ProcessingFailureLabel));
+        RevealMeetingIfOpen(meeting);
+        ShowTimedToast("This meeting needs another try. The recording is still saved.");
     }
 
     private void CancelProcessing()
     {
         _processingCancellation?.Cancel();
-        CurrentView = WorkspaceView.Dashboard;
-        ToastMessage = "Processing paused · your recording is available to retry";
+        ShowTimedToast("Processing paused. The recording stays on this computer and can be retried.");
+    }
+
+    private void OpenActiveProcessing()
+    {
+        if (IsRecording)
+        {
+            ShowTimedToast("Processing continues while you record. Open the meeting after this recording stops.");
+            return;
+        }
+
+        var meeting = Meetings.FirstOrDefault(item => string.Equals(item.Id, _activeProcessingMeetingId, StringComparison.OrdinalIgnoreCase));
+        if (meeting is null) return;
+        OpenMeeting(meeting);
+    }
+
+    private async Task ScanRecordingsAsync()
+    {
+        var recovered = RecordingRecovery.RecoverMissing(AppPaths.RecordingsDirectory, Meetings);
+        if (recovered.Count == 0)
+        {
+            ShowTimedToast("No extra recordings were found. Every saved audio folder is already in the list.");
+            return;
+        }
+
+        foreach (var meeting in recovered)
+        {
+            meeting.OwnerUserId ??= CurrentUser?.UserId;
+            meeting.EnsureCollections();
+            Meetings.Insert(0, meeting);
+        }
+
+        await _repository.SaveAsync(Meetings);
+        RefreshVisibleMeetings();
+        ShowTimedToast(recovered.Count == 1
+            ? "Found 1 saved recording that can be processed again."
+            : "Found saved recordings that can be processed again.");
     }
 
     private void UpdateRecordingClock()
@@ -1622,9 +1883,9 @@ public sealed partial class MainViewModel : ViewModelBase
     public void Dispose()
     {
         _recordingTimer.Stop();
+        _processingTimer.Stop();
         _updateCheckTimer.Stop();
         _toastTimer.Stop();
-        _processingClock.Stop();
         _audio.LevelsChanged -= OnAudioLevelsChanged;
         _hotkey.ToggleRecordingRequested -= OnGlobalHotkeyRequested;
         _processingCancellation?.Cancel();

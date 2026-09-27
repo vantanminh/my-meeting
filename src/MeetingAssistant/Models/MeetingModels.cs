@@ -117,13 +117,20 @@ public sealed class Meeting
         || (!string.IsNullOrWhiteSpace(SystemAudioPath) && System.IO.File.Exists(SystemAudioPath));
 
     [JsonIgnore]
-    public string StatusLabel => Status switch
+    public string StatusLabel => ProcessingPhase switch
     {
-        MeetingStatus.Processing => "Processing",
-        MeetingStatus.Recording => "Recording",
-        MeetingStatus.Failed => "Failed",
-        MeetingStatus.Archived => "Archived",
-        _ => "Ready"
+        ProcessingPhase.Queued => "Waiting to process",
+        ProcessingPhase.Transcribing => "Transcribing",
+        ProcessingPhase.Summarizing => "Writing notes",
+        ProcessingPhase.Failed => "Needs retry",
+        _ => Status switch
+        {
+            MeetingStatus.Processing => "Processing",
+            MeetingStatus.Recording => "Recording",
+            MeetingStatus.Failed => "Needs retry",
+            MeetingStatus.Archived => "Archived",
+            _ => "Ready"
+        }
     };
 
     [JsonIgnore]

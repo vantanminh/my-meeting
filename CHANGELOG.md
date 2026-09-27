@@ -7,7 +7,7 @@
 - A one-hour meeting no longer uploads about 115 MB of WAV. Audio is prepared off the UI thread, mixed on disk, and sent as a 48 kbps MP3, about 20 MB per hour.
 - Waiting for AssemblyAI scales with the recording length (20 minutes to 3 hours) instead of a fixed 2 hours. Brief provider outages while polling, or one failed summary request, are retried instead of failing the meeting.
 - Long transcripts are summarized in parallel parts, and each summary request is limited to 8 minutes.
-- The processing screen shows what is happening right now (upload percent, queued, transcribing, summary parts) and how long it has been running. Daily processing logs are written to `logs/` in the app data folder.
+- The processing card on the meeting page shows what is happening right now (upload percent, queued, transcribing, summary parts) and how long it has been running. Daily processing logs are written to `logs/` in the app data folder.
 
 ### Background and tray
 

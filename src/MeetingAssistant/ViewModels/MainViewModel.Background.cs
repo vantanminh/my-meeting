@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Windows.Input;
-using System.Windows.Threading;
 using MeetingAssistant.Services;
 
 namespace MeetingAssistant.ViewModels;
@@ -25,13 +24,9 @@ public sealed partial class MainViewModel
     public const double MaxUiScale = 1.5;
     private static readonly double[] UiScaleSteps = [0.8, 0.9, 1.0, 1.1, 1.25, 1.4, 1.5];
 
-    private readonly DispatcherTimer _processingClock = new() { Interval = TimeSpan.FromSeconds(1) };
-    private DateTimeOffset? _processingStartedAt;
     private string? _processingDetail;
     private object[] _processingDetailArgs = [];
-    private string _processingElapsedLabel = "00:00";
     private double _uiScale = 1.0;
-    private bool _processingClockHooked;
     private string _processingMeetingTitle = string.Empty;
     private Models.Meeting? _unopenedFinishedMeeting;
 
@@ -58,12 +53,6 @@ public sealed partial class MainViewModel
     {
         get => string.IsNullOrWhiteSpace(_processingMeetingTitle) ? CurrentMeetingTitle : _processingMeetingTitle;
         private set => SetProperty(ref _processingMeetingTitle, value ?? string.Empty);
-    }
-
-    public string ProcessingElapsedLabel
-    {
-        get => _processingElapsedLabel;
-        private set => SetProperty(ref _processingElapsedLabel, value);
     }
 
     public string BackgroundStatusTitle
@@ -140,11 +129,6 @@ public sealed partial class MainViewModel
         ZoomInCommand = new RelayCommand(_ => StepUiScale(+1), _ => UiScale < MaxUiScale);
         ZoomOutCommand = new RelayCommand(_ => StepUiScale(-1), _ => UiScale > MinUiScale);
         ResetZoomCommand = new RelayCommand(_ => UiScale = 1.0);
-        if (!_processingClockHooked)
-        {
-            _processingClock.Tick += (_, _) => UpdateProcessingClock();
-            _processingClockHooked = true;
-        }
     }
 
     public void StepUiScale(int direction)
@@ -156,30 +140,7 @@ public sealed partial class MainViewModel
         UiScale = next;
     }
 
-    private void OnProcessingStateChanged()
-    {
-        if (IsProcessing)
-        {
-            _processingStartedAt = DateTimeOffset.Now;
-            ProcessingElapsedLabel = "00:00";
-            _processingClock.Start();
-        }
-        else
-        {
-            _processingClock.Stop();
-            _processingStartedAt = null;
-        }
-
-        RaiseBackgroundStatusChanged();
-    }
-
-    private void UpdateProcessingClock()
-    {
-        if (_processingStartedAt is null) return;
-        var elapsed = DateTimeOffset.Now - _processingStartedAt.Value;
-        ProcessingElapsedLabel = elapsed.ToString(elapsed.TotalHours >= 1 ? @"h\:mm\:ss" : @"mm\:ss", CultureInfo.InvariantCulture);
-        OnPropertyChanged(nameof(BackgroundStatusSummary));
-    }
+    private void OnProcessingStateChanged() => RaiseBackgroundStatusChanged();
 
     private void SetProcessingDetail(string? template, object[]? args)
     {
@@ -190,10 +151,15 @@ public sealed partial class MainViewModel
 
     private void RaiseProcessingFinished(bool succeeded, Models.Meeting meeting, string message, bool opened)
     {
-        _unopenedFinishedMeeting = succeeded && !opened ? meeting : null;
+        _unopenedFinishedMeeting = opened ? null : meeting;
         RaiseBackgroundStatusChanged();
         ProcessingFinished?.Invoke(this, new ProcessingFinishedEventArgs(succeeded, meeting.Title, message));
     }
+
+    private bool IsShowingMeeting(Models.Meeting meeting)
+        => CurrentView == WorkspaceView.Detail
+            && CurrentMeeting is not null
+            && string.Equals(CurrentMeeting.Id, meeting.Id, StringComparison.OrdinalIgnoreCase);
 
     private void RaiseBackgroundStatusChanged()
     {
@@ -210,9 +176,9 @@ public sealed partial class MainViewModel
             return;
         }
 
-        if (IsProcessing || ProcessingHasError)
+        if (IsProcessing)
         {
-            CurrentView = WorkspaceView.Processing;
+            OpenActiveProcessing();
             return;
         }
 
