@@ -87,7 +87,13 @@ public static class ThemeService
                 ["SpeakerProfileHintBrush"] = "#262626",
                 ["SpeakerProfileHintBorderBrush"] = "#3A3A3A",
                 ["ToastBrush"] = "#1F3A34",
-                ["ToastBorderBrush"] = "#3D8F78"
+                ["ToastBorderBrush"] = "#3D8F78",
+                ["AccentHoverBrush"] = "#7FE9C6",
+                ["AccentPressedBrush"] = "#4CC9A0",
+                ["CardHoverBrush"] = "#313131",
+                ["CardHoverBorderBrush"] = "#3D8F78",
+                ["DangerHoverBrush"] = "#55303A",
+                ["ToolTipBrush"] = "#2C2C2C"
             },
             [ThemeMode.Light] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -159,7 +165,13 @@ public static class ThemeService
                 ["SpeakerProfileHintBrush"] = "#FFFFFF",
                 ["SpeakerProfileHintBorderBrush"] = "#E5E5E5",
                 ["ToastBrush"] = "#D8F3EA",
-                ["ToastBorderBrush"] = "#8FCBB8"
+                ["ToastBorderBrush"] = "#8FCBB8",
+                ["AccentHoverBrush"] = "#138466",
+                ["AccentPressedBrush"] = "#0B5A46",
+                ["CardHoverBrush"] = "#FAFAFA",
+                ["CardHoverBorderBrush"] = "#8FCBB8",
+                ["DangerHoverBrush"] = "#F9DCD9",
+                ["ToolTipBrush"] = "#FFFFFF"
             }
         };
 

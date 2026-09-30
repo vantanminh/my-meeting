@@ -69,6 +69,12 @@
         <SolidColorBrush x:Key="SpeakerProfileHintBorderBrush" Color="#3A3A3A" />
         <SolidColorBrush x:Key="ToastBrush" Color="#1F3A34" />
         <SolidColorBrush x:Key="ToastBorderBrush" Color="#3D8F78" />
+        <SolidColorBrush x:Key="AccentHoverBrush" Color="#7FE9C6" />
+        <SolidColorBrush x:Key="AccentPressedBrush" Color="#4CC9A0" />
+        <SolidColorBrush x:Key="CardHoverBrush" Color="#313131" />
+        <SolidColorBrush x:Key="CardHoverBorderBrush" Color="#3D8F78" />
+        <SolidColorBrush x:Key="DangerHoverBrush" Color="#55303A" />
+        <SolidColorBrush x:Key="ToolTipBrush" Color="#2C2C2C" />
         <Color x:Key="HeroStartColor">#1A3330</Color>
         <Color x:Key="HeroMiddleColor">#24302C</Color>
         <Color x:Key="HeroEndColor">#2A2A2A</Color>
@@ -113,20 +119,24 @@
                                               VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource HoverBrush}" />
-                                <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{DynamicResource HoverBorderBrush}" />
-                            </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.82" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.42" />
+                                <Setter Property="Cursor" Value="Arrow" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+            <!-- Hover colours live on the style (not the template) so each variant keeps its own meaning on hover. -->
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource HoverBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource HoverBorderBrush}" />
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
         <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
@@ -137,8 +147,12 @@
             <Setter Property="Padding" Value="18,11" />
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{DynamicResource MintBrush}" />
-                    <Setter Property="BorderBrush" Value="{DynamicResource MintBrush}" />
+                    <Setter Property="Background" Value="{DynamicResource AccentHoverBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}" />
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource AccentPressedBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentPressedBrush}" />
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -271,6 +285,23 @@
             <Setter Property="Background" Value="{DynamicResource CoralDimBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource DangerBorderBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource CoralBrush}" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource DangerHoverBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource CoralBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Quiet destructive action: reads as a ghost button until hovered. -->
+        <Style x:Key="GhostDangerButton" TargetType="Button" BasedOn="{StaticResource GhostButton}">
+            <Setter Property="Foreground" Value="{DynamicResource CoralBrush}" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource CoralDimBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource DangerBorderBrush}" />
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
         <Style TargetType="TextBox">
@@ -477,6 +508,36 @@
             <Setter Property="Height" Value="4" />
             <Setter Property="Background" Value="{DynamicResource ProgressBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource MintBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Grid SnapsToDevicePixels="True">
+                            <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="4" />
+                            <Border x:Name="PART_Indicator" Background="{TemplateBinding Foreground}" CornerRadius="4" HorizontalAlignment="Left" />
+                            <Border x:Name="IndeterminateFill" Background="{TemplateBinding Foreground}" CornerRadius="4" Opacity="0.35" Visibility="Collapsed" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsIndeterminate" Value="True">
+                                <Setter TargetName="PART_Indicator" Property="Visibility" Value="Collapsed" />
+                                <Setter TargetName="IndeterminateFill" Property="Visibility" Value="Visible" />
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard x:Name="IndeterminatePulse">
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="IndeterminateFill" Storyboard.TargetProperty="Opacity"
+                                                             From="0.25" To="0.9" Duration="0:0:0.9" AutoReverse="True" RepeatBehavior="Forever" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <StopStoryboard BeginStoryboardName="IndeterminatePulse" />
+                                </Trigger.ExitActions>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style TargetType="ListView">
@@ -579,8 +640,74 @@
 
         <Style TargetType="CheckBox">
             <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="13" />
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
             <Setter Property="Margin" Value="0,8" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid Background="Transparent">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="CheckBoxBox" Width="18" Height="18" CornerRadius="4" VerticalAlignment="Top" Margin="0,1,0,0"
+                                    Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource HoverBorderBrush}" BorderThickness="1">
+                                <TextBlock x:Name="CheckGlyph" Text="&#xE73E;" FontFamily="{StaticResource IconFont}" FontSize="11"
+                                           Foreground="{DynamicResource BrandInkBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
+                            </Border>
+                            <ContentPresenter x:Name="CheckBoxContent" Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True">
+                                <ContentPresenter.Resources>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                        <Setter Property="TextWrapping" Value="Wrap" />
+                                    </Style>
+                                </ContentPresenter.Resources>
+                            </ContentPresenter>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="CheckBoxBox" Property="BorderBrush" Value="{DynamicResource MintBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="CheckBoxBox" Property="Background" Value="{DynamicResource MintBrush}" />
+                                <Setter TargetName="CheckBoxBox" Property="BorderBrush" Value="{DynamicResource MintBrush}" />
+                                <Setter TargetName="CheckGlyph" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ToolTip">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Background" Value="{DynamicResource ToolTipBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PopupBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="9,6" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToolTip">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6" Padding="{TemplateBinding Padding}" MaxWidth="320">
+                            <ContentPresenter>
+                                <ContentPresenter.Resources>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                        <Setter Property="TextWrapping" Value="Wrap" />
+                                    </Style>
+                                </ContentPresenter.Resources>
+                            </ContentPresenter>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style x:Key="SectionLabel" TargetType="TextBlock">
@@ -596,6 +723,40 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="8" />
             <Setter Property="Padding" Value="20" />
+        </Style>
+
+        <Style x:Key="InteractiveCardStyle" TargetType="Border" BasedOn="{StaticResource CardStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource CardHoverBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource CardHoverBorderBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsKeyboardFocused, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                    <Setter Property="BorderBrush" Value="{DynamicResource MintBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Slow opacity pulse for "live" indicators such as the recording dot. -->
+        <Style x:Key="PulsingDot" TargetType="Ellipse">
+            <Style.Triggers>
+                <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                    <BeginStoryboard>
+                        <Storyboard>
+                            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="1" To="0.3" Duration="0:0:0.8" AutoReverse="True" RepeatBehavior="Forever" />
+                        </Storyboard>
+                    </BeginStoryboard>
+                </EventTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="EmptyStateIcon" TargetType="Border">
+            <Setter Property="Width" Value="48" />
+            <Setter Property="Height" Value="48" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Background" Value="{DynamicResource MintDimBrush}" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,0,14" />
         </Style>
     </Application.Resources>
 </Application>

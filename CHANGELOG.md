@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Look and feel
+
+- Primary, danger, and card buttons keep their colour on hover instead of turning grey, so the label stays readable. Save on the meeting page is now the primary action, and Delete reads as destructive.
+- Checkboxes, progress bars, and tooltips follow the Dark and Light themes instead of the default Windows look.
+- Settings tabs and transcript filter chips show which one is selected. Meeting and action-item cards highlight on hover and keyboard focus.
+- Captions and badges are at least 11 px. Text symbols were replaced with Segoe Fluent icons, and the recording dot pulses while recording.
+- Empty meeting and search states offer "Start a recording" and "Clear search". Transcript timestamps underline on hover and say they play from that point.
+- Shortcuts: Ctrl + F focuses meeting search (Esc clears it), Ctrl + N opens a new recording, Ctrl + S saves the open meeting.
+
 ### Processing
 
 - A one-hour meeting no longer uploads about 115 MB of WAV. Audio is prepared off the UI thread, mixed on disk, and sent as a 48 kbps MP3, about 20 MB per hour.

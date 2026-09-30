@@ -23,6 +23,7 @@ The first screen supports email/password auth and a local workspace. Local works
 - Processing state with transcription, speaker recognition, analysis, progress, a detail line and elapsed clock, retry, and recovery states. Closing the window while processing keeps it running in the tray.
 - Tray icon with a quick-status flyout: recording timer, processing stage, and one-click stop, cancel, retry, open, or exit.
 - Display size from 80% to 150% (Ctrl + plus, Ctrl + minus, Ctrl + 0, Ctrl + mouse wheel).
+- Keyboard shortcuts: Ctrl + F search meetings (Esc clears), Ctrl + N new recording, Ctrl + S save the open meeting.
 - Meeting review with editable transcript, speaker filtering, summary, key points, decisions, action items, deadlines, questions, and speaker renaming.
 - Speaker profile management and settings for capture sources, retention, sync pause, shortcut state, and startup preference.
 - Responsive native window: Windows 11 chrome with rounded corners, a Mica-style backdrop, caption buttons, and a status bar. The sidebar collapses to an icon rail, dense two-column screens reflow into one column, content stays centered up to 1120px, and every workspace view remains vertically scrollable down to the 760×560 minimum window size.

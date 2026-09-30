@@ -616,6 +616,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (Keyboard.Modifiers == ModifierKeys.Control && HandleCommandShortcut(e.Key))
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (ViewModel.CurrentView != WorkspaceView.Detail) return;
         if (e.OriginalSource is System.Windows.Controls.TextBox or System.Windows.Controls.PasswordBox)
             return;
@@ -653,6 +659,48 @@ public partial class MainWindow : Window
             default:
                 return false;
         }
+    }
+
+    private bool HandleCommandShortcut(Key key)
+    {
+        if (!ViewModel.IsAuthenticated) return false;
+
+        switch (key)
+        {
+            case Key.F:
+                if (ViewModel.CurrentView != WorkspaceView.Dashboard)
+                    ViewModel.NavigateCommand.Execute("Meetings");
+                // The search box only becomes visible once the dashboard has laid out.
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    SearchBox.Focus();
+                    SearchBox.SelectAll();
+                }), DispatcherPriority.Loaded);
+                return true;
+            case Key.N:
+                if (ViewModel.IsRecording || ViewModel.CurrentView is WorkspaceView.Recording or WorkspaceView.Processing)
+                    return false;
+                ViewModel.OpenSetupCommand.Execute(null);
+                return true;
+            case Key.S:
+                if (ViewModel.CurrentView != WorkspaceView.Detail || !ViewModel.SaveMeetingCommand.CanExecute(null))
+                    return false;
+                ViewModel.SaveMeetingCommand.Execute(null);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private void SearchBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape) return;
+
+        if (ViewModel.HasSearchQuery)
+            ViewModel.ClearSearchCommand.Execute(null);
+        else
+            ContentScrollViewer.Focus();
+        e.Handled = true;
     }
 
     private void Window_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
