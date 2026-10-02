@@ -1220,7 +1220,8 @@
                                             </ItemsControl>
                                             <Button Grid.Column="1" Style="{StaticResource SecondaryButton}" Command="{Binding CopyTranscriptCommand}" Content="Copy visible" FontSize="11" Padding="10,6" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8,0,0,0" />
                                         </Grid>
-                                        <ListView ItemsSource="{Binding FilteredTranscript}" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                                        <ListView x:Name="TranscriptList" ItemsSource="{Binding FilteredTranscript}" MaxHeight="720" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.CanContentScroll="True" ScrollViewer.PanningMode="VerticalOnly" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel" VirtualizingPanel.CacheLength="2,2" VirtualizingPanel.CacheLengthUnit="Page">
+                                            <!-- A bounded height lets the list virtualize: a two-hour meeting has well over a thousand turns, and realizing them all froze the page. -->
                                             <ListView.ItemContainerStyle>
                                                 <Style TargetType="ListViewItem">
                                                     <Setter Property="Padding" Value="0" />
@@ -1419,14 +1420,14 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel>
                                             <TextBlock Text="SPEAKER NAMES" Style="{StaticResource SectionLabel}" />
-                                            <TextBlock Text="Rename a speaker once and keep the transcript readable." FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,6,0,0" TextWrapping="Wrap" />
+                                            <TextBlock Text="Renaming here changes this meeting only." FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,6,0,0" TextWrapping="Wrap" />
                                         </StackPanel>
                                         <Button Grid.Column="1" Style="{StaticResource SecondaryButton}" Command="{Binding SaveSpeakerCommand}" Content="Save speaker names" FontSize="11" VerticalAlignment="Center" Margin="16,0,0,0" />
                                     </Grid>
                                 </Border>
                                 <ItemsControl ItemsSource="{Binding SpeakerEditors}" Margin="0,10,0,0">
                                     <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate><DataTemplate><Border Style="{StaticResource CardStyle}" Padding="12" Margin="0,0,8,8" Width="190"><StackPanel><TextBlock Text="{Binding Role}" Style="{StaticResource SectionLabel}" /><TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,7,0,0" Padding="8,7" FontSize="11" /></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate>
+                                    <ItemsControl.ItemTemplate><DataTemplate><Border Style="{StaticResource CardStyle}" Padding="12" Margin="0,0,8,8" Width="190"><StackPanel><StackPanel Orientation="Horizontal"><Ellipse Width="8" Height="8" Fill="{Binding AccentColor}" VerticalAlignment="Center" Margin="0,0,7,0" /><TextBlock Text="{Binding Role}" Style="{StaticResource SectionLabel}" /></StackPanel><TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,7,0,0" Padding="8,7" FontSize="11" /></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate>
                                 </ItemsControl>
                             </StackPanel>
                         </Grid>
@@ -1441,7 +1442,7 @@
                                     </Grid.RowDefinitions>
                                     <StackPanel>
                                         <TextBlock Text="The people in your conversations" FontSize="26" FontWeight="SemiBold" />
-                                        <TextBlock Text="Names are applied across your saved transcripts, so the story gets easier to follow over time." FontSize="13" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,7,0,0" />
+                                        <TextBlock Text="Everyone you have named. Renaming a person here updates every meeting they are in." FontSize="13" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,7,0,0" />
                                     </StackPanel>
                                     <WrapPanel x:Name="SpeakersSaveButton" HorizontalAlignment="Right" VerticalAlignment="Center">
                                         <Button Style="{StaticResource GhostButton}" Command="{Binding MergeSelectedSpeakersCommand}" Content="Merge first two" FontSize="12" Margin="0,0,8,6" />
@@ -1452,10 +1453,19 @@
                                     <Grid x:Name="SpeakerRecognitionPanel">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="49" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                         <Border Width="37" Height="37" CornerRadius="13" Background="{DynamicResource MintDimBrush}" Margin="0,0,12,0"><TextBlock Text="&#xE716;" FontFamily="{StaticResource IconFont}" FontSize="16" Foreground="{DynamicResource MintBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                                        <StackPanel Grid.Column="1"><TextBlock Text="Saved names" FontWeight="SemiBold" FontSize="12" /><TextBlock x:Name="SpeakerRecognitionDescription" Text="Names you save here are applied across transcripts. Voice matching is not enabled yet." TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" /></StackPanel>
+                                        <StackPanel Grid.Column="1"><TextBlock Text="Saved names" FontWeight="SemiBold" FontSize="12" /><TextBlock x:Name="SpeakerRecognitionDescription" Text="Generic labels such as Speaker A are a different person in each meeting, so name them inside that meeting. Voice matching is not enabled yet." TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" /></StackPanel>
                                     </Grid>
                                 </Border>
-                                <TextBlock Text="YOUR SPEAKER PROFILES" Style="{StaticResource SectionLabel}" Margin="0,0,0,11" />
+                                <TextBlock Text="YOUR SPEAKER PROFILES" Style="{StaticResource SectionLabel}" Margin="0,0,0,6" />
+                                <TextBlock Text="{Binding UnnamedSpeakerHint}" FontSize="12" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,11">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding UnnamedSpeakerHint}" Value=""><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                                 <ItemsControl ItemsSource="{Binding SpeakerEditors}">
                                     <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
@@ -1465,7 +1475,7 @@
                                                     <Grid>
                                                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                                         <Border Width="42" Height="42" CornerRadius="14" Background="{DynamicResource BlueDimBrush}" HorizontalAlignment="Left"><TextBlock Text="&#xE77B;" FontFamily="{StaticResource IconFont}" Foreground="{DynamicResource BlueBrush}" FontSize="17" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
-                                                        <Border Grid.Column="1" Background="{DynamicResource MintDimBrush}" CornerRadius="11" Padding="8,4" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12,0,0,0"><TextBlock Text="Voice profile" FontSize="11" Foreground="{DynamicResource MintBrush}" TextTrimming="CharacterEllipsis" /></Border>
+                                                        <Ellipse Grid.Column="1" Width="10" Height="10" Fill="{Binding AccentColor}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12,4,0,0" />
                                                     </Grid>
                                                     <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" FontSize="14" FontWeight="SemiBold" Padding="0,10,0,4" Background="Transparent" BorderThickness="0" />
                                                     <TextBox Text="{Binding Role, UpdateSourceTrigger=PropertyChanged}" FontSize="11" Foreground="{DynamicResource MutedBrush}" Background="Transparent" BorderThickness="0" Padding="0" />
@@ -1478,7 +1488,7 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                                 <Border Style="{StaticResource CardStyle}" BorderBrush="{DynamicResource SpeakerProfileHintBorderBrush}" Background="{DynamicResource SpeakerProfileHintBrush}" Padding="20" Margin="0,14,0,0">
-                                    <Grid x:Name="SpeakerProfilesHint"><Grid.ColumnDefinitions><ColumnDefinition Width="32" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock Text="✦" Foreground="{DynamicResource GoldBrush}" FontSize="20" Margin="0,0,13,0" /><StackPanel Grid.Column="1"><TextBlock Text="Profiles grow with every review" FontSize="12" FontWeight="SemiBold" /><TextBlock Text="As you rename speakers, their names are carried into future local transcripts." TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" /></StackPanel></Grid>
+                                    <Grid x:Name="SpeakerProfilesHint"><Grid.ColumnDefinitions><ColumnDefinition Width="32" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock Text="✦" Foreground="{DynamicResource GoldBrush}" FontSize="20" Margin="0,0,13,0" /><StackPanel Grid.Column="1"><TextBlock Text="Name people once per meeting" FontSize="12" FontWeight="SemiBold" /><TextBlock Text="Open a meeting, rename Speaker A, B and so on, then refresh the summary so notes and action items use real names." TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" /></StackPanel></Grid>
                                 </Border>
                             </StackPanel>
                         </Grid>

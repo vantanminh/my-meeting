@@ -12,12 +12,24 @@ public sealed class JsonMeetingRepository : IMeetingRepository
         PropertyNameCaseInsensitive = true
     };
 
+    private readonly SemaphoreSlim _writeGate = new(1, 1);
+    private long _requestedSaves;
+    private long _writtenSave;
+
     public string LastQuarantinePath { get; private set; } = string.Empty;
 
-    public async Task<IReadOnlyList<Meeting>> LoadAsync()
+    public Task<IReadOnlyList<Meeting>> LoadAsync()
     {
-        Directory.CreateDirectory(AppPaths.DataDirectory);
+        // Decrypting and parsing a workspace with long transcripts can take a while,
+        // so keep it off the UI thread.
+        var dataDirectory = AppPaths.DataDirectory;
         var meetingsPath = AppPaths.MeetingsPath;
+        return Task.Run(() => LoadCoreAsync(dataDirectory, meetingsPath));
+    }
+
+    private async Task<IReadOnlyList<Meeting>> LoadCoreAsync(string dataDirectory, string meetingsPath)
+    {
+        Directory.CreateDirectory(dataDirectory);
 
         if (!File.Exists(meetingsPath))
             return [];
@@ -53,12 +65,50 @@ public sealed class JsonMeetingRepository : IMeetingRepository
 
     public async Task SaveAsync(IReadOnlyCollection<Meeting> meetings)
     {
-        Directory.CreateDirectory(AppPaths.DataDirectory);
+        // Saves are requested from the UI thread while a meeting is processing. Take the
+        // list snapshot here, then serialize, encrypt and write on the thread pool so typing,
+        // scrolling and navigation stay responsive. Writes never overlap, and a save that
+        // was overtaken by a newer one is skipped because the newer snapshot already holds it.
+        var snapshot = meetings.ToArray();
+        var dataDirectory = AppPaths.DataDirectory;
         var meetingsPath = AppPaths.MeetingsPath;
+        var generation = Interlocked.Increment(ref _requestedSaves);
+        await _writeGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (generation <= _writtenSave) return;
+            await Task.Run(() => WriteAsync(snapshot, dataDirectory, meetingsPath)).ConfigureAwait(false);
+            _writtenSave = generation;
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+    }
+
+    private static async Task WriteAsync(Meeting[] meetings, string dataDirectory, string meetingsPath)
+    {
+        Directory.CreateDirectory(dataDirectory);
         var temporaryPath = $"{meetingsPath}.{Guid.NewGuid():N}.tmp";
-        var json = JsonSerializer.Serialize(meetings, JsonOptions);
+        var json = Serialize(meetings);
         await ProtectedWorkspaceStore.WriteAsync(temporaryPath, json);
         File.Move(temporaryPath, meetingsPath, overwrite: true);
+    }
+
+    private static string Serialize(Meeting[] meetings)
+    {
+        // The UI can edit a meeting while it is being written. If a list changes mid-write,
+        // serialize again; the next save would carry the change anyway.
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return JsonSerializer.Serialize(meetings, JsonOptions);
+            }
+            catch (InvalidOperationException) when (attempt < 3)
+            {
+            }
+        }
     }
 
     public static string Quarantine(string meetingsPath)

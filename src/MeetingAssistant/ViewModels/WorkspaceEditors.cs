@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using MeetingAssistant.Models;
 using MeetingAssistant.Services;
 
@@ -148,4 +149,65 @@ public sealed class ProcessingStepViewModel : ViewModelBase
     }
 
     public string State => IsComplete ? "Done" : IsCurrent ? "Current" : "Pending";
+}
+
+/// <summary>
+/// Brings an <see cref="ObservableCollection{T}"/> in line with a new ordered list using
+/// moves, inserts and removals instead of Clear + Add, so the list does not rebuild every
+/// row. Rows whose display signature changed are replaced in place so they redraw.
+/// </summary>
+public static class CollectionSync
+{
+    public static void Apply<T>(
+        ObservableCollection<T> target,
+        IReadOnlyList<T> desired,
+        Func<T, string> signature,
+        Dictionary<T, string> signatures)
+        where T : class
+    {
+        for (var index = 0; index < desired.Count; index++)
+        {
+            var item = desired[index];
+            var current = signature(item);
+            if (index < target.Count && ReferenceEquals(target[index], item))
+            {
+                RefreshIfChanged(target, index, item, current, signatures);
+                continue;
+            }
+
+            var existing = -1;
+            for (var probe = index + 1; probe < target.Count; probe++)
+            {
+                if (!ReferenceEquals(target[probe], item)) continue;
+                existing = probe;
+                break;
+            }
+
+            if (existing >= 0)
+            {
+                target.Move(existing, index);
+                RefreshIfChanged(target, index, item, current, signatures);
+            }
+            else
+            {
+                target.Insert(index, item);
+                signatures[item] = current;
+            }
+        }
+
+        while (target.Count > desired.Count)
+        {
+            signatures.Remove(target[^1]);
+            target.RemoveAt(target.Count - 1);
+        }
+    }
+
+    private static void RefreshIfChanged<T>(ObservableCollection<T> target, int index, T item, string current, Dictionary<T, string> signatures)
+        where T : class
+    {
+        if (signatures.TryGetValue(item, out var previous) && previous == current) return;
+        signatures[item] = current;
+        // Replacing an item with itself raises a Replace change, which redraws only that row.
+        target[index] = item;
+    }
 }
