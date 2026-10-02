@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Speed
+
+- The app stays responsive while a meeting is processing. Saving the workspace now happens in the background, progress updates redraw only the processing meeting instead of every list, and search waits until you stop typing.
+- Long transcripts open and scroll smoothly. The transcript list only draws the turns on screen, and scrolling moves through the transcript before the page.
+
+### Speakers
+
+- Renaming "Speaker A" in one meeting no longer renames "Speaker A" in every other meeting. Existing meetings are separated automatically the next time the app opens.
+- The Speakers page lists the people you have named and updates every meeting they are in. Generic labels are named inside each meeting, and the page says how many are still unnamed.
+
 ### Look and feel
 
 - Primary, danger, and card buttons keep their colour on hover instead of turning grey, so the label stays readable. Save on the meeting page is now the primary action, and Delete reads as destructive.

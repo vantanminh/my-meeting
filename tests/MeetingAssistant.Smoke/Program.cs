@@ -596,6 +596,9 @@ try
 
     RunRecordingRecoverySmoke(failures);
     await RunMeetingPipelineSmokeAsync(failures);
+    RunSpeakerIdentitySmoke(failures);
+    RunCollectionSyncSmoke(failures);
+    await RunRepositorySaveSmokeAsync(failures);
 }
 catch (Exception exception)
 {
@@ -623,6 +626,111 @@ if (failures.Count > 0)
 
 Console.WriteLine("Smoke checks passed: local workspace, audio setup, capture refusal, closed WAV tracks, processing, transcript, speakers, summary, progress, and GitHub updates.");
 return 0;
+
+static void RunSpeakerIdentitySmoke(List<string> failures)
+{
+    // Older builds hashed only the label, so "Speaker A" had the same id in every meeting
+    // and renaming it in one meeting renamed it everywhere.
+    const string legacyId = "spk-shared000000";
+    Meeting Legacy(string id) => new()
+    {
+        Id = id,
+        Speakers = [new SpeakerProfile { Id = legacyId, Name = "Speaker A" }, new SpeakerProfile { Id = "spk-only-" + id, Name = "Speaker B" }],
+        Transcript =
+        [
+            new TranscriptSegment { SpeakerId = legacyId, SpeakerName = "Speaker A", Text = "Hello" },
+            new TranscriptSegment { SpeakerId = "spk-only-" + id, SpeakerName = "Speaker B", Text = "Hi" }
+        ]
+    };
+    var monday = Legacy("monday");
+    var tuesday = Legacy("tuesday");
+    var changed = SpeakerIdentity.Isolate([monday, tuesday]);
+    var mondayA = monday.Speakers[0].Id;
+    var tuesdayA = tuesday.Speakers[0].Id;
+    if (changed.Count != 2 || mondayA == tuesdayA || mondayA == legacyId)
+        failures.Add("shared speaker ids should be split per meeting");
+    if (monday.Transcript[0].SpeakerId != mondayA || tuesday.Transcript[0].SpeakerId != tuesdayA)
+        failures.Add("isolating speakers should move transcript turns to the new id");
+    if (monday.Speakers[1].Id != "spk-only-monday")
+        failures.Add("speaker ids used by one meeting should be left alone");
+    if (SpeakerIdentity.Isolate([monday, tuesday]).Count != 0 || monday.Speakers[0].Id != mondayA)
+        failures.Add("isolating speakers again should change nothing");
+    var shared = new SpeakerProfile { Id = "spk-same-object", Name = "Speaker C" };
+    var first = new Meeting { Id = "first", Speakers = [shared] };
+    var second = new Meeting { Id = "second", Speakers = [shared] };
+    SpeakerIdentity.Isolate([first, second]);
+    first.Speakers[0].Name = "Lan";
+    if (second.Speakers[0].Name != "Speaker C")
+        failures.Add("renaming a speaker in one meeting must not rename it in another");
+    if (SpeakerIdentity.For("a", "Speaker A") == SpeakerIdentity.For("b", "Speaker A"))
+        failures.Add("new speaker ids should depend on the meeting");
+
+    var scoped = new Meeting
+    {
+        Id = "scoped",
+        Speakers = [new SpeakerProfile { Id = "openai-mic", Name = "Microphone" }],
+        Transcript = [new TranscriptSegment { SpeakerId = "openai-mic", SpeakerName = "Microphone", Text = "Hi" }]
+    };
+    SpeakerIdentity.Scope(scoped);
+    if (scoped.Speakers[0].Id != SpeakerIdentity.For("scoped", "openai-mic") || scoped.Transcript[0].SpeakerId != scoped.Speakers[0].Id)
+        failures.Add("scoping a meeting should re-key its speakers and turns together");
+
+    foreach (var generic in new[] { "Speaker A", "speaker 3", "Speaker", "Unknown speaker", "Người nói 2" })
+    {
+        if (!SpeakerIdentity.IsGenericName(generic))
+            failures.Add($"\"{generic}\" should count as a generic speaker label");
+    }
+    foreach (var person in new[] { "Lan", "Speaker Nguyen Van An", "Microphone" })
+    {
+        if (SpeakerIdentity.IsGenericName(person))
+            failures.Add($"\"{person}\" should count as a named person");
+    }
+}
+
+static void RunCollectionSyncSmoke(List<string> failures)
+{
+    var a = new Meeting { Title = "A" };
+    var b = new Meeting { Title = "B" };
+    var c = new Meeting { Title = "C" };
+    var target = new System.Collections.ObjectModel.ObservableCollection<Meeting>();
+    var signatures = new Dictionary<Meeting, string>(ReferenceEqualityComparer.Instance);
+    var resets = 0;
+    var replaces = 0;
+    target.CollectionChanged += (_, args) =>
+    {
+        if (args.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset) resets++;
+        if (args.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Replace) replaces++;
+    };
+    CollectionSync.Apply(target, [a, b, c], meeting => meeting.Title, signatures);
+    CollectionSync.Apply(target, [c, a], meeting => meeting.Title, signatures);
+    if (!target.SequenceEqual([c, a]))
+        failures.Add("list sync should reorder and drop rows to match the new results");
+    if (resets != 0 || replaces != 0)
+        failures.Add("list sync should not reset or redraw unchanged rows");
+    a.Title = "A renamed";
+    CollectionSync.Apply(target, [c, a], meeting => meeting.Title, signatures);
+    if (replaces != 1 || !ReferenceEquals(target[1], a))
+        failures.Add("list sync should redraw only the row whose display changed");
+}
+
+static async Task RunRepositorySaveSmokeAsync(List<string> failures)
+{
+    // Saves run in the background; overlapping saves must leave the newest state on disk.
+    var repository = new JsonMeetingRepository();
+    var meetings = new List<Meeting> { new() { Id = "save-1", Title = "First" } };
+    var saves = new List<Task>();
+    for (var index = 0; index < 8; index++)
+    {
+        meetings[0].Title = $"Title {index}";
+        saves.Add(repository.SaveAsync(meetings.ToList()));
+    }
+    meetings.Add(new Meeting { Id = "save-2", Title = "Second" });
+    saves.Add(repository.SaveAsync(meetings.ToList()));
+    await Task.WhenAll(saves);
+    var reloaded = await repository.LoadAsync();
+    if (reloaded.Count != 2 || reloaded[0].Title != "Title 7")
+        failures.Add("overlapping saves should leave the newest meetings on disk");
+}
 
 static void RunRecordingRecoverySmoke(List<string> failures)
 {

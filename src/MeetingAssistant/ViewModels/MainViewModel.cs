@@ -29,9 +29,10 @@ public sealed class SpeakerEditorViewModel : ViewModelBase
     private string _accentColor;
     private int _meetings;
 
-    public SpeakerEditorViewModel(SpeakerProfile profile)
+    public SpeakerEditorViewModel(SpeakerProfile profile, IReadOnlyList<string>? ids = null)
     {
         Id = profile.Id;
+        Ids = ids is { Count: > 0 } ? ids : [profile.Id];
         _name = profile.Name;
         _role = profile.Role;
         _accentColor = profile.AccentColor;
@@ -39,6 +40,10 @@ public sealed class SpeakerEditorViewModel : ViewModelBase
     }
 
     public string Id { get; }
+
+    /// <summary>Every profile this editor writes to: one in a meeting, or one per meeting for a named person.</summary>
+    public IReadOnlyList<string> Ids { get; }
+
     public int Meetings
     {
         get => _meetings;
@@ -82,6 +87,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly DispatcherTimer _recordingTimer;
     private readonly DispatcherTimer _updateCheckTimer;
     private readonly DispatcherTimer _processingTimer;
+    private readonly DispatcherTimer _searchTimer;
     private readonly Queue<string> _processingOrder = new();
     private readonly Dictionary<string, RecordingData> _processingRecordings = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _processingGate = new();
@@ -199,6 +205,12 @@ public sealed partial class MainViewModel : ViewModelBase
         _recordingTimer.Tick += (_, _) => UpdateRecordingClock();
         _processingTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _processingTimer.Tick += (_, _) => RefreshProcessingElapsed();
+        _searchTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(180) };
+        _searchTimer.Tick += (_, _) =>
+        {
+            _searchTimer.Stop();
+            RefreshVisibleMeetings();
+        };
         _updateCheckTimer = new DispatcherTimer { Interval = TimeSpan.FromHours(6) };
         _updateCheckTimer.Tick += (_, _) => _ = CheckForUpdatesAsync(silent: true);
         _audio.LevelsChanged += OnAudioLevelsChanged;
@@ -365,7 +377,10 @@ public sealed partial class MainViewModel : ViewModelBase
         set
         {
             if (!SetProperty(ref _searchQuery, value)) return;
-            RefreshVisibleMeetings();
+            // Searching scans every transcript, so wait until typing pauses. Clearing is instant.
+            _searchTimer.Stop();
+            if (string.IsNullOrWhiteSpace(value)) RefreshVisibleMeetings();
+            else _searchTimer.Start();
             OnPropertyChanged(nameof(HasSearchQuery));
             ClearSearchCommand.RaiseCanExecuteChanged();
         }
@@ -920,7 +935,8 @@ public sealed partial class MainViewModel : ViewModelBase
             meetings.AddRange(recovered);
         }
 
-        if (interrupted > 0 || recovered.Count > 0)
+        var isolated = SpeakerIdentity.Isolate(meetings);
+        if (interrupted > 0 || recovered.Count > 0 || isolated.Count > 0)
             await _repository.SaveAsync(meetings);
 
         Meetings.Clear();
@@ -970,8 +986,7 @@ public sealed partial class MainViewModel : ViewModelBase
             .OrderByDescending(meeting => meeting.StartedAt)
             .ToList();
 
-        VisibleMeetings.Clear();
-        foreach (var meeting in results) VisibleMeetings.Add(meeting);
+        CollectionSync.Apply(VisibleMeetings, results, MeetingRowSignature, _meetingRowSignatures);
         RebuildInbox();
         OnPropertyChanged(nameof(MeetingCount));
         OnPropertyChanged(nameof(TodayCount));
@@ -982,6 +997,22 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowEmptyWorkspace));
         OnPropertyChanged(nameof(LastSyncLabel));
         OnPropertyChanged(nameof(RecordingBytesLabel));
+    }
+
+    private readonly Dictionary<Meeting, string> _meetingRowSignatures = new(ReferenceEqualityComparer.Instance);
+
+    private static string MeetingRowSignature(Meeting meeting)
+        => string.Join('\u001f', meeting.Title, meeting.StatusLabel, meeting.DurationLabel, meeting.DateLabel, meeting.ParticipantCount, meeting.SyncStatus);
+
+    /// <summary>Redraws one meeting row (for example while it is processing) without rebuilding the list.</summary>
+    private void RefreshMeetingRow(Meeting meeting)
+    {
+        var index = VisibleMeetings.IndexOf(meeting);
+        if (index < 0) return;
+        var signature = MeetingRowSignature(meeting);
+        if (_meetingRowSignatures.TryGetValue(meeting, out var previous) && previous == signature) return;
+        _meetingRowSignatures[meeting] = signature;
+        VisibleMeetings[index] = meeting;
     }
 
     private void Navigate(string destination)
@@ -1050,16 +1081,56 @@ public sealed partial class MainViewModel : ViewModelBase
     private void BuildSpeakerEditors(Meeting? meeting = null)
     {
         SpeakerEditors.Clear();
-        var profiles = (meeting?.Speakers ?? Meetings.SelectMany(item => item.Speakers))
-            .GroupBy(speaker => speaker.Id)
-            .Select(group => group.First())
-            .OrderBy(speaker => speaker.Name);
-        foreach (var profile in profiles)
+        if (meeting is not null)
         {
-            profile.Meetings = SpeakerMemory.Recount(Meetings, profile.Id);
-            SpeakerEditors.Add(new SpeakerEditorViewModel(profile));
+            // Inside a meeting every speaker is edited on its own; ids are scoped to the meeting.
+            foreach (var profile in meeting.Speakers.GroupBy(speaker => speaker.Id).Select(group => group.First()).OrderBy(speaker => speaker.Name))
+            {
+                profile.Meetings = SpeakerMemory.Recount(Meetings, profile.Id);
+                SpeakerEditors.Add(new SpeakerEditorViewModel(profile));
+            }
+
+            OnPropertyChanged(nameof(UnnamedSpeakerCount));
+            OnPropertyChanged(nameof(UnnamedSpeakerHint));
+            return;
+        }
+
+        // The Speakers page lists people by the name you gave them. Generic labels such as
+        // "Speaker A" are different people in every meeting, so they are named per meeting.
+        var people = Meetings
+            .SelectMany(item => item.Speakers)
+            .Where(profile => !SpeakerIdentity.IsGenericName(profile.Name))
+            .GroupBy(profile => profile.Name.Trim(), StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(group => group.Key, StringComparer.CurrentCultureIgnoreCase);
+        foreach (var person in people)
+        {
+            var ids = person.Select(profile => profile.Id).Distinct(StringComparer.Ordinal).ToList();
+            var first = person.First();
+            first.Meetings = Meetings.Count(item => item.Speakers.Any(profile => ids.Contains(profile.Id)));
+            SpeakerEditors.Add(new SpeakerEditorViewModel(first, ids));
+        }
+
+        OnPropertyChanged(nameof(UnnamedSpeakerCount));
+        OnPropertyChanged(nameof(UnnamedSpeakerHint));
+    }
+
+    public string UnnamedSpeakerHint
+    {
+        get
+        {
+            if (SpeakerEditors.Count == 0 && CurrentView == WorkspaceView.Speakers)
+                return LocalizationService.Translate("No named people yet. Open a meeting and rename its speakers to see them here.");
+            var unnamed = UnnamedSpeakerCount;
+            return unnamed == 0
+                ? string.Empty
+                : string.Format(System.Globalization.CultureInfo.CurrentCulture, LocalizationService.Translate("{0} speakers in your meetings still have a generic label."), unnamed);
         }
     }
+
+    /// <summary>Generic speakers ("Speaker A") still waiting for a name, across all meetings.</summary>
+    public int UnnamedSpeakerCount => Meetings
+        .Where(item => !item.IsArchived)
+        .Sum(item => item.Speakers.Count(profile => SpeakerIdentity.IsGenericName(profile.Name)));
 
     private void SetTranscriptFilter(string filter)
     {
@@ -1347,7 +1418,9 @@ public sealed partial class MainViewModel : ViewModelBase
                 ProcessingMessage = value.Message;
                 SetProcessingDetail(value.Detail, value.DetailArgs);
                 UpdateProcessingSteps(value.StageIndex);
-                RefreshVisibleMeetings();
+                // Progress arrives many times a second during upload. Only the processing
+                // row can change, so redraw that row instead of rebuilding every list.
+                RefreshMeetingRow(meeting);
                 NotifyProcessingChrome();
             });
             var result = await _intelligence.ProcessMeetingAsync(new MeetingProcessingRequest
@@ -1359,6 +1432,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 {
                     if (!Meetings.Contains(updated)) return;
                     updated.UpdatedAt = DateTimeOffset.Now;
+                    RefreshMeetingRow(updated);
                     await _repository.SaveAsync(Meetings);
                     _ = token;
                 },
@@ -1599,28 +1673,61 @@ public sealed partial class MainViewModel : ViewModelBase
     private async Task SaveSpeakerAsync()
     {
         if (SpeakerEditors.Count == 0) return;
+        var changed = new List<Meeting>();
         foreach (var editor in SpeakerEditors)
         {
-            var profiles = Meetings.SelectMany(meeting => meeting.Speakers).Where(profile => profile.Id == editor.Id).ToList();
-            foreach (var profile in profiles)
+            var name = string.IsNullOrWhiteSpace(editor.Name) ? "Unknown speaker" : editor.Name.Trim();
+            var role = string.IsNullOrWhiteSpace(editor.Role) ? "Participant" : editor.Role.Trim();
+            var color = string.IsNullOrWhiteSpace(editor.AccentColor) ? "#88A9FF" : editor.AccentColor.Trim();
+            var ids = editor.Ids.ToHashSet(StringComparer.Ordinal);
+            foreach (var meeting in Meetings)
             {
-                profile.Name = string.IsNullOrWhiteSpace(editor.Name) ? "Unknown speaker" : editor.Name.Trim();
-                profile.Role = string.IsNullOrWhiteSpace(editor.Role) ? "Participant" : editor.Role.Trim();
-                profile.AccentColor = string.IsNullOrWhiteSpace(editor.AccentColor) ? "#88A9FF" : editor.AccentColor.Trim();
-                foreach (var segment in Meetings.SelectMany(meeting => meeting.Transcript).Where(segment => segment.SpeakerId == profile.Id))
-                    segment.SpeakerName = profile.Name;
+                var touched = false;
+                foreach (var profile in meeting.Speakers.Where(profile => ids.Contains(profile.Id)))
+                {
+                    if (profile.Name == name && profile.Role == role && profile.AccentColor == color) continue;
+                    profile.Name = name;
+                    profile.Role = role;
+                    profile.AccentColor = color;
+                    touched = true;
+                }
+
+                foreach (var segment in meeting.Transcript.Where(segment => ids.Contains(segment.SpeakerId) && segment.SpeakerName != name))
+                {
+                    segment.SpeakerName = name;
+                    touched = true;
+                }
+
+                if (touched && !changed.Contains(meeting)) changed.Add(meeting);
             }
         }
 
-        if (CurrentMeeting is not null) BuildDetailState(CurrentMeeting);
-        foreach (var meeting in Meetings)
+        if (changed.Count == 0)
+        {
+            ShowTimedToast("Speaker names are already saved");
+            return;
+        }
+
+        await PersistSpeakerChangesAsync(changed, changed.Count == 1
+            ? "Speaker names updated in this meeting"
+            : "Speaker names updated across your meetings");
+    }
+
+    private async Task PersistSpeakerChangesAsync(IReadOnlyCollection<Meeting> changed, string toast)
+    {
+        if (CurrentMeeting is not null && CurrentView == WorkspaceView.Detail) BuildDetailState(CurrentMeeting);
+        else if (CurrentView == WorkspaceView.Speakers) BuildSpeakerEditors();
+
+        // Only the meetings that actually changed are synced and saved.
+        foreach (var meeting in changed)
         {
             meeting.UpdatedAt = DateTimeOffset.Now;
             var sync = await _cloud.SyncAsync(meeting);
             meeting.SyncStatus = sync.Label;
         }
         await _repository.SaveAsync(Meetings);
-        ToastMessage = "Speaker names updated across your meetings";
+        RefreshVisibleMeetings();
+        ShowTimedToast(toast);
     }
 
     private async Task SaveSettingsAsync()
@@ -1884,6 +1991,7 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         _recordingTimer.Stop();
         _processingTimer.Stop();
+        _searchTimer.Stop();
         _updateCheckTimer.Stop();
         _toastTimer.Stop();
         _audio.LevelsChanged -= OnAudioLevelsChanged;

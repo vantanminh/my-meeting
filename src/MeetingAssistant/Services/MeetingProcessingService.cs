@@ -1,8 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
-using System.Security.Cryptography;
-using System.Text;
 using MeetingAssistant.Models;
 
 namespace MeetingAssistant.Services;
@@ -270,6 +268,7 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
                     progress.Report(value with { ShowPercent = false }));
                 var result = await _openAiIntelligence.ProcessAsync(request.Recording, quiet, cancellationToken);
                 CopyOnto(meeting, result.Meeting);
+                SpeakerIdentity.Scope(meeting);
                 meeting.TranscriptionProvider = "openai";
                 meeting.ProcessingPhase = ProcessingPhase.Completed;
                 meeting.Status = MeetingStatus.Ready;
@@ -323,7 +322,7 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
             var endMs = Math.Max(segment.StartMs, segment.EndMs);
             segments.Add(new TranscriptSegment
             {
-                SpeakerId = StableSpeakerId(speakerName),
+                SpeakerId = SpeakerIdentity.For(meeting.Id, "assemblyai:" + speakerName),
                 SpeakerName = speakerName,
                 Start = start,
                 End = TimeSpan.FromMilliseconds(endMs),
@@ -497,9 +496,6 @@ public sealed class MeetingProcessingService : IMeetingIntelligenceService
             return "Speaker " + char.ToUpperInvariant(trimmed[0]);
         return trimmed;
     }
-
-    private static string StableSpeakerId(string speakerName)
-        => "spk-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("assemblyai:" + speakerName))).ToLowerInvariant()[..12];
 }
 
 internal static class MeetingProcessingLog

@@ -415,6 +415,7 @@ public sealed partial class MainViewModel
     {
         Meetings.Clear();
         VisibleMeetings.Clear();
+        _meetingRowSignatures.Clear();
         SpeakerEditors.Clear();
         InboxActions.Clear();
         CurrentMeeting = null;
@@ -492,14 +493,22 @@ public sealed partial class MainViewModel
         meeting.Summary.Deadlines = DeadlineEditors.Select(item => item.ToItem()).ToList();
     }
 
+    private string _inboxSignature = string.Empty;
+
     internal void RebuildInbox()
     {
+        var open = Meetings
+            .Where(item => !item.IsArchived)
+            .SelectMany(meeting => meeting.Summary.ActionItems.Where(item => !item.IsComplete).Select(action => (meeting, action)))
+            .ToList();
+        var signature = string.Join('\u001e', open.Select(entry => string.Join('\u001f',
+            System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(entry.meeting),
+            entry.meeting.Title, entry.action.Id, entry.action.Text, entry.action.Owner, entry.action.Due)));
+        if (signature == _inboxSignature && InboxActions.Count == open.Count) return;
+        _inboxSignature = signature;
         InboxActions.Clear();
-        foreach (var meeting in Meetings.Where(item => !item.IsArchived))
-        {
-            foreach (var action in meeting.Summary.ActionItems.Where(item => !item.IsComplete))
-                InboxActions.Add(new InboxActionViewModel(meeting, action));
-        }
+        foreach (var (meeting, action) in open)
+            InboxActions.Add(new InboxActionViewModel(meeting, action));
         OnPropertyChanged(nameof(OpenActionCount));
         OnPropertyChanged(nameof(WeekCount));
     }
@@ -575,22 +584,45 @@ public sealed partial class MainViewModel
 
     private async Task MergeSpeakersAsync()
     {
-        if (SpeakerEditors.Count < 2 || CurrentMeeting is null) return;
+        if (SpeakerEditors.Count < 2) return;
         var keep = SpeakerEditors[0];
         var drop = SpeakerEditors[1];
+        var dropIds = drop.Ids.ToHashSet(StringComparer.Ordinal);
+        var keepIds = keep.Ids.ToHashSet(StringComparer.Ordinal);
+        var changed = new List<Meeting>();
         foreach (var meeting in Meetings)
         {
-            foreach (var segment in meeting.Transcript.Where(segment => segment.SpeakerId == drop.Id))
+            var dropped = meeting.Speakers.Where(profile => dropIds.Contains(profile.Id)).ToList();
+            if (dropped.Count == 0) continue;
+            changed.Add(meeting);
+            var target = meeting.Speakers.FirstOrDefault(profile => keepIds.Contains(profile.Id));
+            if (target is null)
             {
-                segment.SpeakerId = keep.Id;
-                segment.SpeakerName = keep.Name;
+                // The kept person was not in this meeting: the dropped profile becomes them.
+                foreach (var profile in dropped)
+                {
+                    profile.Name = keep.Name;
+                    profile.Role = keep.Role;
+                    profile.AccentColor = keep.AccentColor;
+                }
+
+                foreach (var segment in meeting.Transcript.Where(segment => dropIds.Contains(segment.SpeakerId)))
+                    segment.SpeakerName = keep.Name;
+                continue;
             }
 
-            meeting.Speakers.RemoveAll(profile => profile.Id == drop.Id);
+            foreach (var segment in meeting.Transcript.Where(segment => dropIds.Contains(segment.SpeakerId)))
+            {
+                segment.SpeakerId = target.Id;
+                segment.SpeakerName = target.Name;
+            }
+
+            meeting.Speakers.RemoveAll(profile => dropIds.Contains(profile.Id));
+            meeting.ParticipantCount = meeting.Speakers.Count;
         }
 
-        await SaveSpeakerAsync();
-        ShowTimedToast("Speakers merged");
+        if (changed.Count == 0) return;
+        await PersistSpeakerChangesAsync(changed, "Speakers merged");
     }
 
     private void ResetWorkspace(string? choice)

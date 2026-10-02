@@ -27,6 +27,14 @@ Long recordings stay bounded and observable:
 - When the polling limit is reached, the job id is kept on the meeting, so a retry resumes polling instead of uploading again.
 - Every stage reports a detail line (upload percent, queued, transcribing, summary parts) plus an elapsed clock, and `MeetingProcessingLog` writes a daily `logs/processing-yyyyMMdd.log` under the app data folder (kept 14 days).
 
+## Responsiveness while processing
+
+The UI thread only takes snapshots. `JsonMeetingRepository.SaveAsync` copies the meeting list, then serializes, encrypts and writes it on the thread pool; writes never overlap, and a save overtaken by a newer one is skipped. Loading decrypts and parses off the UI thread too. Processing progress redraws only the processing meeting's row (`RefreshMeetingRow`), and the meeting list and action inbox are updated by diff (`CollectionSync`) instead of being cleared and rebuilt. Search waits 180 ms after typing stops. The transcript list has a bounded height so it virtualizes, and `SmoothScroll` lets it scroll before the page does.
+
+## Speaker identity
+
+Speaker ids belong to one meeting (`SpeakerIdentity.For(meetingId, label)`), because "Speaker A" in two meetings is two different people. Renaming or merging inside a meeting changes only that meeting. On load, ids that older versions shared across meetings are split deterministically. The Speakers page lists people by the names users gave them and leaves generic labels to be named inside each meeting.
+
 ## Background processing and tray
 
 `MainWindow` owns the tray wiring. Closing the window while a meeting is processing hides it instead of exiting. Processing keeps running, and the tray icon (a runtime-drawn state dot: red for recording, gold for processing, coral for failed) keeps its tooltip in sync with `MainViewModel.BackgroundStatusSummary`. Left-clicking the icon opens `TrayFlyoutWindow`, a quick-status panel bound to the same view model. It can stop a recording, cancel or retry processing, start a recording, open the app, or exit. When processing finishes and the window is not in front, a tray notification opens the finished meeting. Exit from the tray or flyout asks for confirmation while work is running.
