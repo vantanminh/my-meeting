@@ -27,7 +27,7 @@ The first screen supports email/password auth and a local workspace. Local works
 - Meeting review with editable transcript, speaker filtering, summary, key points, decisions, action items, deadlines, questions, speaker renaming, and questions answered from that meeting.
 - Click a transcript line to play that moment from the local recording, then click it again to replay. While audio plays, the subtitle and the highlighted line follow the file.
 - Speaker profile management and settings for capture sources, retention, sync pause, shortcut state, and startup preference.
-- Responsive native window: Windows 11 chrome with rounded corners, a Mica-style backdrop, caption buttons, and a status bar. The sidebar collapses to an icon rail, dense two-column screens reflow into one column, content stays centered up to 1120px, and every workspace view remains vertically scrollable down to the 760×560 minimum window size.
+- Responsive native window: Windows 11 chrome with rounded corners, a Mica-style backdrop, caption buttons, and a status bar. Dark mode is a warm ink canvas and light mode is warm paper, with jade as the accent. The sidebar collapses to an icon rail, dense two-column screens reflow into one column, content stays centered up to 1120px, and every workspace view remains vertically scrollable down to the 760×560 minimum window size.
 
 ## Architecture
 

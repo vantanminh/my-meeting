@@ -260,7 +260,7 @@ public partial class MainWindow : Window
         QuickStartButton.HorizontalContentAlignment = contentAlignment;
         AccountButton.HorizontalContentAlignment = contentAlignment;
 
-        var navPadding = compact ? new Thickness(0, 10, 0, 10) : new Thickness(13, 11, 13, 11);
+        var navPadding = compact ? new Thickness(0, 10, 0, 10) : new Thickness(12, 9, 12, 9);
         MeetingsNavButton.Padding = navPadding;
         SpeakersNavButton.Padding = navPadding;
         ActionsNavButton.Padding = navPadding;
@@ -277,7 +277,7 @@ public partial class MainWindow : Window
         HeaderPrivateLabel.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
         HeaderDetails.Margin = new Thickness(0, 0, compact ? 14 : 24, 0);
 
-        SearchBorder.Width = compact ? narrow ? veryNarrow ? 150 : 170 : 190 : 220;
+        SearchBorder.Width = compact ? narrow ? veryNarrow ? 156 : 180 : 210 : 248;
         RecordHeaderLabel.Visibility = veryNarrow ? Visibility.Collapsed : Visibility.Visible;
         RecordHeaderButton.Width = veryNarrow ? 40 : double.NaN;
         RecordHeaderButton.Padding = veryNarrow
@@ -396,9 +396,9 @@ public partial class MainWindow : Window
         else
         {
             RecordingActions.Orientation = WpfOrientation.Horizontal;
-            PauseRecordingButton.Width = 132;
-            ResumeRecordingButton.Width = 132;
-            StopRecordingButton.Width = 132;
+            PauseRecordingButton.Width = 148;
+            ResumeRecordingButton.Width = 148;
+            StopRecordingButton.Width = 156;
             PauseRecordingButton.Margin = new Thickness(0, 0, 8, 0);
             ResumeRecordingButton.Margin = new Thickness(8, 0, 8, 0);
             StopRecordingButton.Margin = new Thickness(8, 0, 0, 0);
