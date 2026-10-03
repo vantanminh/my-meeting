@@ -185,8 +185,24 @@ public sealed class MeetingPlaybackService : IDisposable
 {
     private readonly MediaPlayer _player = new();
     private string? _openPath;
+    private TimeSpan? _pendingSeek;
 
     public bool IsPlaying { get; private set; }
+    public event EventHandler? Ended;
+
+    public MeetingPlaybackService()
+    {
+        _player.MediaOpened += (_, _) =>
+        {
+            if (_pendingSeek is { } pending)
+                _player.Position = pending;
+        };
+        _player.MediaEnded += (_, _) =>
+        {
+            IsPlaying = false;
+            Ended?.Invoke(this, EventArgs.Empty);
+        };
+    }
     public double Speed
     {
         get => _player.SpeedRatio <= 0 ? 1 : _player.SpeedRatio;
@@ -232,7 +248,9 @@ public sealed class MeetingPlaybackService : IDisposable
 
     public void Seek(TimeSpan position)
     {
-        _player.Position = position < TimeSpan.Zero ? TimeSpan.Zero : position;
+        var safe = position < TimeSpan.Zero ? TimeSpan.Zero : position;
+        _pendingSeek = safe;
+        _player.Position = safe;
     }
 
     public void Skip(TimeSpan delta)

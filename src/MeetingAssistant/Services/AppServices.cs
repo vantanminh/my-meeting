@@ -27,6 +27,7 @@ public sealed class AppServices : IDisposable
         DemoIntelligence = new DemoMeetingIntelligenceService();
         var transcription = new AssemblyAiTranscriptionService(AssemblyAiConfiguration, _providerHttpClient);
         var summary = new MeetingSummaryService(OpenAiConfiguration, _providerHttpClient);
+        MeetingQa = new MeetingQaService(OpenAiConfiguration, _providerHttpClient);
         IntelligenceService = new MeetingProcessingService(
             AssemblyAiConfiguration,
             OpenAiConfiguration,
@@ -51,6 +52,7 @@ public sealed class AppServices : IDisposable
     public IAudioDeviceCatalog AudioDevices { get; }
     public IAudioCaptureService AudioCaptureService { get; }
     public IMeetingIntelligenceService IntelligenceService { get; }
+    public MeetingQaService MeetingQa { get; }
     public ICloudSyncService CloudSyncService { get; }
     public IUpdateChannelService UpdateService { get; }
     public IGlobalHotkeyService HotkeyService { get; }

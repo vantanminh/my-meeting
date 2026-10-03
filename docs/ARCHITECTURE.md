@@ -31,6 +31,12 @@ Long recordings stay bounded and observable:
 
 The UI thread only takes snapshots. `JsonMeetingRepository.SaveAsync` copies the meeting list, then serializes, encrypts and writes it on the thread pool; writes never overlap, and a save overtaken by a newer one is skipped. Loading decrypts and parses off the UI thread too. Processing progress redraws only the processing meeting's row (`RefreshMeetingRow`), and the meeting list and action inbox are updated by diff (`CollectionSync`) instead of being cleared and rebuilt. Search waits 180 ms after typing stops. The transcript list has a bounded height so it virtualizes, and `SmoothScroll` lets it scroll before the page does.
 
+## Meeting questions and subtitle sync
+
+The review screen asks OpenAI about the open meeting through `MeetingQaService`. The request includes the saved notes and the transcript, or the time-ordered lines that overlap the question when the transcript is longer than the model budget. Answers are not stored on the meeting. Citation timestamps seek the local WAV to that utterance.
+
+`TranscriptCueSync` maps a playback position to the transcript line whose start and end contain it. Clicking a line plays from its start and pauses at its end so the same click can replay it. Play, pause, and skip follow the whole file, and the caption updates from the player position. Timestamps come from the mixed recording; the microphone and system tracks start together, so either local file stays aligned with those cues.
+
 ## Speaker identity
 
 Speaker ids belong to one meeting (`SpeakerIdentity.For(meetingId, label)`), because "Speaker A" in two meetings is two different people. Renaming or merging inside a meeting changes only that meeting. On load, ids that older versions shared across meetings are split deterministically. The Speakers page lists people by the names users gave them and leaves generic labels to be named inside each meeting.

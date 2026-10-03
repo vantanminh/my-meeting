@@ -599,6 +599,7 @@ try
     RunSpeakerIdentitySmoke(failures);
     RunCollectionSyncSmoke(failures);
     await RunRepositorySaveSmokeAsync(failures);
+    await RunQaAndCueSmokeAsync(failures);
 }
 catch (Exception exception)
 {
@@ -624,7 +625,7 @@ if (failures.Count > 0)
     return 1;
 }
 
-Console.WriteLine("Smoke checks passed: local workspace, audio setup, capture refusal, closed WAV tracks, processing, transcript, speakers, summary, progress, and GitHub updates.");
+Console.WriteLine("Smoke checks passed: local workspace, audio setup, capture refusal, closed WAV tracks, processing, transcript, speakers, summary, questions, subtitle cues, progress, and GitHub updates.");
 return 0;
 
 static void RunSpeakerIdentitySmoke(List<string> failures)
@@ -1188,6 +1189,125 @@ static bool IsPcm16Wave(byte[] payload)
     }
 
     return hasPcm16Format && hasAudioData;
+}
+
+static async Task RunQaAndCueSmokeAsync(List<string> failures)
+{
+    var early = new TranscriptSegment
+    {
+        Id = "early",
+        SpeakerName = "Speaker A",
+        Start = TimeSpan.FromSeconds(1),
+        End = TimeSpan.FromSeconds(4),
+        Text = "xin chào"
+    };
+    var topic = new TranscriptSegment
+    {
+        Id = "topic",
+        SpeakerName = "Speaker B",
+        Start = TimeSpan.FromSeconds(10),
+        End = TimeSpan.FromSeconds(18),
+        Text = "kubernetes rollout stays on universal-3-5-pro"
+    };
+    var late = new TranscriptSegment
+    {
+        Id = "late",
+        SpeakerName = "Speaker C",
+        Start = TimeSpan.FromSeconds(30),
+        End = TimeSpan.FromSeconds(40),
+        Text = "deadline thứ sáu"
+    };
+    var segments = new List<TranscriptSegment> { early, topic, late };
+
+    if (TranscriptCueSync.CueAt(segments, TimeSpan.FromSeconds(0)) is not null)
+        failures.Add("a position before the first line should not show a subtitle");
+    if (TranscriptCueSync.CueAt(segments, TimeSpan.FromSeconds(12))?.Id != "topic")
+        failures.Add("playback position should select the line that contains it");
+    if (TranscriptCueSync.CueAt(segments, TimeSpan.FromSeconds(18)) is not null)
+        failures.Add("a line should end at its timestamp so the next cue can take over");
+    if (!TranscriptCueSync.ShouldStopClip(TimeSpan.FromSeconds(18), TimeSpan.FromSeconds(18))
+        || TranscriptCueSync.ShouldStopClip(TimeSpan.FromSeconds(17), TimeSpan.FromSeconds(18)))
+        failures.Add("a clicked line should stop when the player reaches its end");
+    var openEnded = new TranscriptSegment { Start = TimeSpan.FromSeconds(3), End = TimeSpan.FromSeconds(3), Text = "short" };
+    if (TranscriptCueSync.CueEnd(openEnded) <= openEnded.Start)
+        failures.Add("a line without a later end should still have a playable window");
+
+    early.Text = "xin chào " + new string('y', 500);
+    late.Text = "deadline thứ sáu " + new string('x', 800);
+    var selected = MeetingQaService.SelectContext("kubernetes được chốt thế nào?", segments, 80);
+    if (selected.Count != 1 || selected[0].Id != "topic")
+        failures.Add("a long transcript should keep the line that matches the question");
+
+    var parsed = MeetingQaService.ParseAnswer("""{"answer":"Giữ kubernetes.","citations":["00:10","nope"]}""", segments);
+    if (parsed.Answer != "Giữ kubernetes."
+        || parsed.Citations.Count != 1
+        || parsed.Citations[0].Position != TimeSpan.FromSeconds(10)
+        || parsed.Citations[0].Excerpt?.Contains("kubernetes", StringComparison.Ordinal) != true)
+        failures.Add("an answer citation should point at the matching transcript line");
+
+    var handler = new MeetingQaHandler();
+    using var http = new HttpClient(handler);
+    var qa = new MeetingQaService(
+        new OpenAiConfiguration("openai-test-key", summaryModelOverride: "gpt-6-luna", userEnvironment: new InMemoryUserEnvironmentStore()),
+        http,
+        inputTokenBudget: 4_000,
+        retryDelay: TimeSpan.Zero);
+    var meeting = new Meeting
+    {
+        Title = "Họp kỹ thuật",
+        DetectedLanguage = "vi",
+        Transcript = segments,
+        Summary = new MeetingSummary { Overview = "Chốt hướng kubernetes." }
+    };
+    var answer = await qa.AskAsync(meeting, "Kubernetes được nhắc lúc nào?", [new QaExchange("Ai nói?", "Speaker B.")]);
+    if (answer.Answer != "Lúc 00:10." || answer.Citations.Count != 1 || answer.Citations[0].Position != TimeSpan.FromSeconds(10))
+        failures.Add("meeting questions should return the grounded answer and its citation");
+    if (!handler.Body.Contains("Kubernetes được nhắc lúc nào?", StringComparison.Ordinal)
+        || !handler.Body.Contains("kubernetes rollout", StringComparison.Ordinal)
+        || !handler.Body.Contains("Chốt hướng kubernetes.", StringComparison.Ordinal)
+        || !handler.Body.Contains("Ai nói?", StringComparison.Ordinal)
+        || !handler.Body.Contains("\"strict\":true", StringComparison.Ordinal))
+        failures.Add("meeting questions should send the transcript, notes, prior turn, and a strict schema");
+
+    var previousKey = Environment.GetEnvironmentVariable(OpenAiConfiguration.ApiKeyEnvironmentVariable);
+    var previousScopedKey = Environment.GetEnvironmentVariable(OpenAiConfiguration.ScopedApiKeyEnvironmentVariable);
+    Environment.SetEnvironmentVariable(OpenAiConfiguration.ApiKeyEnvironmentVariable, null);
+    Environment.SetEnvironmentVariable(OpenAiConfiguration.ScopedApiKeyEnvironmentVariable, null);
+    try
+    {
+        var missing = new MeetingQaService(
+            new OpenAiConfiguration(userEnvironment: new InMemoryUserEnvironmentStore()),
+            http,
+            retryDelay: TimeSpan.Zero);
+        try
+        {
+            await missing.AskAsync(meeting, "Câu hỏi", []);
+            failures.Add("meeting questions without an OpenAI key should be refused");
+        }
+        catch (MeetingProcessingException exception) when (exception.Message.Contains("OpenAI API key", StringComparison.Ordinal))
+        {
+        }
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable(OpenAiConfiguration.ApiKeyEnvironmentVariable, previousKey);
+        Environment.SetEnvironmentVariable(OpenAiConfiguration.ScopedApiKeyEnvironmentVariable, previousScopedKey);
+    }
+}
+
+sealed class MeetingQaHandler : HttpMessageHandler
+{
+    public string Body { get; private set; } = string.Empty;
+
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        Body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(cancellationToken);
+        var payload = JsonSerializer.Serialize(new { output_text = """{"answer":"Lúc 00:10.","citations":["00:10"]}""" });
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+        };
+    }
 }
 
 sealed class RecordingProgress<T> : IProgress<T>

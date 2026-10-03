@@ -15,6 +15,20 @@ public sealed partial class MainViewModel
     private readonly DispatcherTimer _toastTimer = new() { Interval = TimeSpan.FromSeconds(4) };
     private IUserPrompt _prompt = new SilentUserPrompt();
     private readonly MeetingPlaybackService _playback = new();
+    private readonly MeetingQaService _meetingQa = null!;
+    private readonly DispatcherTimer _playbackTimer = new() { Interval = TimeSpan.FromMilliseconds(200) };
+    private CancellationTokenSource? _qaCancellation;
+    private string? _reviewMeetingId;
+    private string? _clipSegmentId;
+    private TimeSpan? _clipEnd;
+    private string _questionDraft = string.Empty;
+    private string _qaStatus = string.Empty;
+    private string _activeSegmentId = string.Empty;
+    private string _activeCueSpeaker = string.Empty;
+    private string _activeCueText = string.Empty;
+    private string _activeCueRange = string.Empty;
+    private bool _isAsking;
+    private bool _hasActiveCue;
     private string _transcriptionLanguage = "auto";
     private string _updatePolicy = nameof(UpdatePolicy.Ask);
     private string _greetingPrefix = "Good morning, ";
@@ -94,6 +108,11 @@ public sealed partial class MainViewModel
     public ICommand RemoveAssemblyAiKeyCommand { get; private set; } = null!;
     public ICommand ResetWorkspaceCommand { get; private set; } = null!;
     public ICommand AssignSpeakerCommand { get; private set; } = null!;
+    public ICommand ReplayCueCommand { get; private set; } = null!;
+    public ICommand PlayCitationCommand { get; private set; } = null!;
+    public AsyncRelayCommand AskMeetingCommand { get; private set; } = null!;
+
+    public ObservableCollection<MeetingQaTurn> QaTurns { get; } = [];
 
     public string TranscriptionLanguage
     {
@@ -131,7 +150,18 @@ public sealed partial class MainViewModel
         {
             if (!SetProperty(ref _selectedAudioSource, value)) return;
             OnPropertyChanged(nameof(CurrentAudioPath));
-            RefreshPlaybackSource();
+            var position = TimeSpan.FromSeconds(Math.Max(0, PlaybackPosition));
+            if (!RefreshPlaybackSource())
+            {
+                IsPlayingAudio = false;
+                _playbackTimer.Stop();
+                return;
+            }
+
+            _playback.Seek(position);
+            if (IsPlayingAudio)
+                _playback.Play();
+            SyncCue(position);
         }
     }
 
@@ -220,7 +250,80 @@ public sealed partial class MainViewModel
     public double PlaybackPosition
     {
         get => _playbackPosition;
-        set => SetProperty(ref _playbackPosition, value);
+        set
+        {
+            if (!SetProperty(ref _playbackPosition, value)) return;
+            OnPropertyChanged(nameof(PlaybackClockLabel));
+        }
+    }
+
+    public string PlaybackClockLabel
+    {
+        get
+        {
+            var position = TimeSpan.FromSeconds(Math.Max(0, PlaybackPosition));
+            var total = CurrentMeeting?.Duration ?? TimeSpan.Zero;
+            if (total < position) total = position;
+            return $"{TranscriptCueSync.FormatClock(position)} / {TranscriptCueSync.FormatClock(total)}";
+        }
+    }
+
+    public string QuestionDraft
+    {
+        get => _questionDraft;
+        set
+        {
+            if (!SetProperty(ref _questionDraft, value)) return;
+            AskMeetingCommand?.RaiseCanExecuteChanged();
+        }
+    }
+
+    public string QaStatus
+    {
+        get => LocalizationService.Translate(_qaStatus);
+        private set
+        {
+            if (!SetProperty(ref _qaStatus, value)) return;
+            OnPropertyChanged(nameof(HasQaStatus));
+        }
+    }
+
+    public bool HasQaStatus => !string.IsNullOrWhiteSpace(_qaStatus);
+
+    public bool IsAsking
+    {
+        get => _isAsking;
+        private set => SetProperty(ref _isAsking, value);
+    }
+
+    public bool HasActiveCue
+    {
+        get => _hasActiveCue;
+        private set => SetProperty(ref _hasActiveCue, value);
+    }
+
+    public string ActiveSegmentId
+    {
+        get => _activeSegmentId;
+        private set => SetProperty(ref _activeSegmentId, value);
+    }
+
+    public string ActiveCueSpeaker
+    {
+        get => _activeCueSpeaker;
+        private set => SetProperty(ref _activeCueSpeaker, value);
+    }
+
+    public string ActiveCueText
+    {
+        get => _activeCueText;
+        private set => SetProperty(ref _activeCueText, value);
+    }
+
+    public string ActiveCueRange
+    {
+        get => _activeCueRange;
+        private set => SetProperty(ref _activeCueRange, value);
     }
 
     public string CurrentAudioPath
@@ -319,6 +422,16 @@ public sealed partial class MainViewModel
         RemoveAssemblyAiKeyCommand = new RelayCommand(_ => RemoveAssemblyAiKey());
         ResetWorkspaceCommand = new RelayCommand(parameter => ResetWorkspace(parameter as string));
         AssignSpeakerCommand = new RelayCommand(parameter => AssignSpeaker(parameter));
+        ReplayCueCommand = new RelayCommand(_ => ReplayCue());
+        PlayCitationCommand = new RelayCommand(parameter => PlayCitation(parameter as QaCitation));
+        AskMeetingCommand = new AsyncRelayCommand(AskMeetingAsync, () => CurrentMeeting is not null && !string.IsNullOrWhiteSpace(QuestionDraft));
+        _playback.Ended += (_, _) =>
+        {
+            IsPlayingAudio = false;
+            _playbackTimer.Stop();
+            PlaybackStatus = HasActiveCue ? "Line finished. Click it again to replay." : "Playback finished";
+        };
+        _playbackTimer.Tick += (_, _) => OnPlaybackTick();
         _toastTimer.Tick += (_, _) =>
         {
             _toastTimer.Stop();
@@ -472,9 +585,12 @@ public sealed partial class MainViewModel
         RebuildInbox();
         OnPropertyChanged(nameof(CanPlayAudio));
         OnPropertyChanged(nameof(CurrentAudioPath));
-        PlaybackStatus = meeting.HasAudio
-            ? "Local audio is ready · choose a source and jump from a timestamp"
-            : "Audio expired or was not kept; the transcript remains.";
+        if (!IsPlayingAudio && string.IsNullOrEmpty(ActiveSegmentId))
+        {
+            PlaybackStatus = meeting.HasAudio
+                ? "Local audio is ready. Click a line to play that moment."
+                : "Audio expired or was not kept; the transcript remains.";
+        }
     }
 
     internal void ApplyReviewEditors(Meeting meeting)
@@ -689,13 +805,57 @@ public sealed partial class MainViewModel
         ShowTimedToast("New recordings will be saved in the selected folder");
     }
 
-    public void SeekTo(TranscriptSegment segment)
+    public void SeekTo(TranscriptSegment segment) => PlaySegment(segment);
+
+    public void PlaySegment(TranscriptSegment segment)
     {
-        RefreshPlaybackSource();
+        var replaying = string.Equals(_clipSegmentId, segment.Id, StringComparison.Ordinal);
+        _clipSegmentId = segment.Id;
+        _clipEnd = TranscriptCueSync.CueEnd(segment);
+        ShowCue(segment);
+        PlaybackPosition = Math.Max(0, segment.Start.TotalSeconds);
+        if (!RefreshPlaybackSource())
+        {
+            IsPlayingAudio = false;
+            _playbackTimer.Stop();
+            PlaybackStatus = "Audio expired or was not kept; the transcript remains.";
+            return;
+        }
+
         _playback.Seek(segment.Start);
-        PlaybackPosition = _playback.Position.TotalSeconds;
-        PlaybackStatus = $"Seek {segment.Timestamp}";
-        if (!IsPlayingAudio) PlayAudio();
+        _playback.Play();
+        IsPlayingAudio = true;
+        _playbackTimer.Start();
+        PlaybackStatus = replaying ? "Replaying the selected line" : "Playing the selected line";
+    }
+
+    public void PlayCitation(QaCitation? citation)
+    {
+        if (citation is null || CurrentMeeting is null)
+            return;
+        var segment = TranscriptCueSync.CueAt(CurrentMeeting.Transcript, citation.Position)
+            ?? CurrentMeeting.Transcript.FirstOrDefault(item => item.Start == citation.Position);
+        if (segment is not null)
+        {
+            PlaySegment(segment);
+            return;
+        }
+
+        _clipSegmentId = null;
+        _clipEnd = null;
+        if (!RefreshPlaybackSource())
+        {
+            PlaybackStatus = "Audio expired or was not kept; the transcript remains.";
+            return;
+        }
+
+        _playback.Seek(citation.Position);
+        PlaybackPosition = citation.Position.TotalSeconds;
+        _playback.Play();
+        IsPlayingAudio = true;
+        _playbackTimer.Start();
+        SyncCue(citation.Position);
+        PlaybackStatus = "Playing the selected line";
     }
 
     public void HandlePlaybackKeys(string key)
@@ -763,6 +923,8 @@ public sealed partial class MainViewModel
 
     private void PlayAudio()
     {
+        _clipSegmentId = null;
+        _clipEnd = null;
         if (!RefreshPlaybackSource())
         {
             PlaybackStatus = "Audio expired or was not kept; the transcript remains.";
@@ -771,6 +933,8 @@ public sealed partial class MainViewModel
 
         _playback.Play();
         IsPlayingAudio = true;
+        _playbackTimer.Start();
+        SyncCue(_playback.Position);
         PlaybackStatus = "Playing local audio";
     }
 
@@ -778,8 +942,19 @@ public sealed partial class MainViewModel
     {
         _playback.Pause();
         IsPlayingAudio = false;
+        _playbackTimer.Stop();
         PlaybackPosition = _playback.Position.TotalSeconds;
+        SyncCue(_playback.Position);
         PlaybackStatus = "Playback paused";
+    }
+
+    private void StopPlayback()
+    {
+        _playback.Pause();
+        _playbackTimer.Stop();
+        IsPlayingAudio = false;
+        _clipSegmentId = null;
+        _clipEnd = null;
     }
 
     private void TogglePlayback()
@@ -790,10 +965,110 @@ public sealed partial class MainViewModel
 
     private void SkipPlayback(TimeSpan delta)
     {
+        _clipSegmentId = null;
+        _clipEnd = null;
         if (!RefreshPlaybackSource()) return;
         _playback.Skip(delta);
         PlaybackPosition = _playback.Position.TotalSeconds;
-        PlaybackStatus = $"Seek {TimeSpan.FromSeconds(PlaybackPosition):mm\\:ss}";
+        SyncCue(TimeSpan.FromSeconds(PlaybackPosition));
+        if (IsPlayingAudio)
+            _playbackTimer.Start();
+        PlaybackStatus = "Playing local audio";
+    }
+
+    private void OnPlaybackTick()
+    {
+        if (!IsPlayingAudio)
+        {
+            _playbackTimer.Stop();
+            return;
+        }
+
+        var position = _playback.Position;
+        PlaybackPosition = position.TotalSeconds;
+        if (TranscriptCueSync.ShouldStopClip(position, _clipEnd))
+        {
+            _playback.Pause();
+            IsPlayingAudio = false;
+            _playbackTimer.Stop();
+            PlaybackStatus = "Line finished. Click it again to replay.";
+            return;
+        }
+
+        if (_clipEnd is null)
+            SyncCue(position);
+    }
+
+    private void ReplayCue()
+    {
+        var segment = CurrentMeeting?.Transcript.FirstOrDefault(item => item.Id == ActiveSegmentId);
+        if (segment is not null)
+            PlaySegment(segment);
+    }
+
+    private void SyncCue(TimeSpan position)
+    {
+        var cue = CurrentMeeting is null ? null : TranscriptCueSync.CueAt(CurrentMeeting.Transcript, position);
+        if (string.Equals(cue?.Id ?? string.Empty, ActiveSegmentId, StringComparison.Ordinal))
+            return;
+        ShowCue(cue);
+    }
+
+    private void ShowCue(TranscriptSegment? segment)
+    {
+        ActiveSegmentId = segment?.Id ?? string.Empty;
+        ActiveCueSpeaker = segment?.SpeakerName ?? string.Empty;
+        ActiveCueText = segment?.Text ?? string.Empty;
+        ActiveCueRange = segment is null
+            ? string.Empty
+            : $"{TranscriptCueSync.FormatClock(segment.Start)} – {TranscriptCueSync.FormatClock(TranscriptCueSync.CueEnd(segment))}";
+        HasActiveCue = segment is not null;
+    }
+
+    private void ClearCue()
+    {
+        ShowCue(null);
+        PlaybackPosition = 0;
+    }
+
+    private async Task AskMeetingAsync()
+    {
+        var meeting = CurrentMeeting;
+        var question = QuestionDraft.Trim();
+        if (meeting is null || question.Length == 0 || IsAsking)
+            return;
+
+        IsAsking = true;
+        QaStatus = "Reading the transcript…";
+        var history = QaTurns
+            .TakeLast(6)
+            .Select(turn => new QaExchange(turn.Question, turn.Answer))
+            .ToList();
+        _qaCancellation?.Cancel();
+        _qaCancellation?.Dispose();
+        _qaCancellation = new CancellationTokenSource();
+        var cancellation = _qaCancellation.Token;
+        try
+        {
+            var answer = await _meetingQa.AskAsync(meeting, question, history, cancellation);
+            if (cancellation.IsCancellationRequested || !ReferenceEquals(CurrentMeeting, meeting))
+                return;
+            QaTurns.Add(new MeetingQaTurn(question, answer));
+            QuestionDraft = string.Empty;
+            QaStatus = string.Empty;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (MeetingProcessingException exception)
+        {
+            if (!cancellation.IsCancellationRequested && ReferenceEquals(CurrentMeeting, meeting))
+                QaStatus = exception.Message;
+        }
+        finally
+        {
+            IsAsking = false;
+        }
     }
 
     private bool RefreshPlaybackSource()

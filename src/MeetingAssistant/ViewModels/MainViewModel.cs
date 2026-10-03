@@ -172,6 +172,7 @@ public sealed partial class MainViewModel : ViewModelBase
         _openAi = services.OpenAiConfiguration;
         _assemblyAi = services.AssemblyAiConfiguration;
         _openAiIntelligence = services.OpenAiIntelligence;
+        _meetingQa = services.MeetingQa;
         _updates = services.UpdateService;
         _devices = services.AudioDevices;
         _startup = services.Startup;
@@ -778,7 +779,7 @@ public sealed partial class MainViewModel : ViewModelBase
             nameof(HotkeyStatus), nameof(ToastMessage), nameof(LastSyncLabel), nameof(PageTitle), nameof(PageDescription),
             nameof(OpenAiKeyStatus), nameof(AssemblyAiKeyStatus), nameof(OpenAiConnectionStatus), nameof(OpenAiProviderLabel), nameof(UpdateChannelLabel),
             nameof(UpdateStatus), nameof(UpdateStageLabel), nameof(UpdateProgressDetail), nameof(UpdateVersionDescription),
-            nameof(GreetingPrefix), nameof(PlaybackStatus), nameof(LastSyncLabel), nameof(ProcessingDetail),
+            nameof(GreetingPrefix), nameof(PlaybackStatus), nameof(QaStatus), nameof(HasQaStatus), nameof(LastSyncLabel), nameof(ProcessingDetail),
             nameof(BackgroundStatusTitle), nameof(BackgroundStatusSummary),
             nameof(MeetingNotesSummary), nameof(BackgroundProcessingLabel), nameof(ProcessingElapsedLabel)
         })
@@ -1063,6 +1064,17 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private void BuildDetailState(Meeting meeting)
     {
+        if (!string.Equals(_reviewMeetingId, meeting.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            _reviewMeetingId = meeting.Id;
+            QaTurns.Clear();
+            QuestionDraft = string.Empty;
+            QaStatus = string.Empty;
+            _qaCancellation?.Cancel();
+            StopPlayback();
+            ClearCue();
+        }
+
         TranscriptFilterOptions.Clear();
         TranscriptFilterChips.Clear();
         TranscriptFilterOptions.Add("All speakers");
@@ -1994,6 +2006,9 @@ public sealed partial class MainViewModel : ViewModelBase
         _searchTimer.Stop();
         _updateCheckTimer.Stop();
         _toastTimer.Stop();
+        _playbackTimer.Stop();
+        _qaCancellation?.Cancel();
+        _qaCancellation?.Dispose();
         _audio.LevelsChanged -= OnAudioLevelsChanged;
         _hotkey.ToggleRecordingRequested -= OnGlobalHotkeyRequested;
         _processingCancellation?.Cancel();

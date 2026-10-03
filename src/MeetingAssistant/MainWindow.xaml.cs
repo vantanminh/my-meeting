@@ -117,6 +117,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (e.PropertyName == nameof(MainViewModel.ActiveSegmentId))
+        {
+            Dispatcher.BeginInvoke(ScrollTranscriptToActive, DispatcherPriority.Background);
+            return;
+        }
+
         if (e.PropertyName is not (nameof(MainViewModel.CurrentView) or nameof(MainViewModel.IsAuthenticated)))
             return;
 
@@ -602,10 +608,25 @@ public partial class MainWindow : Window
             viewModel.AssemblyAiApiKeyInput = passwordBox.Password;
     }
 
-    private void TranscriptTimestamp_Click(object sender, MouseButtonEventArgs e)
+    private void ScrollTranscriptToActive()
+    {
+        var id = ViewModel.ActiveSegmentId;
+        if (string.IsNullOrEmpty(id) || ViewModel.CurrentView != WorkspaceView.Detail)
+            return;
+        var segment = ViewModel.FilteredTranscript.FirstOrDefault(item => item.Id == id);
+        if (segment is null)
+            return;
+        TranscriptList.ScrollIntoView(segment);
+        TranscriptList.SelectedItem = segment;
+    }
+
+    private void TranscriptSegment_Click(object sender, MouseButtonEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: MeetingAssistant.Models.TranscriptSegment segment })
-            ViewModel.SeekTo(segment);
+        {
+            ViewModel.PlaySegment(segment);
+            e.Handled = true;
+        }
     }
 
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
