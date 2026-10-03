@@ -211,3 +211,18 @@ public static class CollectionSync
         target[index] = item;
     }
 }
+
+public sealed class MeetingQaTurn
+{
+    public MeetingQaTurn(string question, MeetingAnswer answer)
+    {
+        Question = question;
+        Answer = answer.Answer;
+        Citations = answer.Citations;
+    }
+
+    public string Question { get; }
+    public string Answer { get; }
+    public IReadOnlyList<QaCitation> Citations { get; }
+    public bool HasCitations => Citations.Count > 0;
+}
