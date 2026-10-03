@@ -6,6 +6,7 @@
         Width="360" SizeToContent="Height"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True"
+        Foreground="{DynamicResource TextBrush}"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         Deactivated="Window_Deactivated"
         PreviewKeyDown="Window_PreviewKeyDown"
@@ -63,9 +64,9 @@
         </Style>
     </Window.Resources>
 
-    <Border Margin="12" CornerRadius="12" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Padding="18">
+    <Border Margin="14" CornerRadius="18" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" Padding="18">
         <Border.Effect>
-            <DropShadowEffect BlurRadius="18" ShadowDepth="3" Opacity="0.35" />
+            <DropShadowEffect BlurRadius="28" ShadowDepth="0" Opacity="0.45" Color="#000000" />
         </Border.Effect>
         <StackPanel>
             <Grid>
@@ -74,8 +75,12 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <Border Width="34" Height="34" CornerRadius="10" Background="{DynamicResource MintBrush}" VerticalAlignment="Center">
-                    <TextBlock Text="M" Foreground="{DynamicResource BrandInkBrush}" FontWeight="Bold" FontSize="17" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <Border Width="36" Height="36" CornerRadius="12" Background="{DynamicResource MintBrush}" VerticalAlignment="Center">
+                    <Grid Width="16" Height="16">
+                        <Border Width="2" Height="9" CornerRadius="1" Background="{DynamicResource BrandInkBrush}" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                        <Border Width="2" Height="16" CornerRadius="1" Background="{DynamicResource BrandInkBrush}" HorizontalAlignment="Center" />
+                        <Border Width="2" Height="6" CornerRadius="1" Background="{DynamicResource BrandInkBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
                 </Border>
                 <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center">
                     <TextBlock Text="Meeting Assistant" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
@@ -92,7 +97,7 @@
                 <StackPanel>
                     <TextBlock Text="{Binding RecordingIndicatorLabel}" Style="{StaticResource SectionLabel}" Foreground="{DynamicResource CoralBrush}" />
                     <TextBlock Text="{Binding RecordingTitle}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="0,8,0,0" />
-                    <TextBlock Text="{Binding ElapsedLabel}" FontSize="30" FontWeight="SemiBold" Margin="0,2,0,0" />
+                    <TextBlock Text="{Binding ElapsedLabel}" FontFamily="{StaticResource DisplayFont}" FontSize="32" FontWeight="Light" Margin="0,4,0,0" />
                     <Button Style="{StaticResource DangerButton}" Command="{Binding StopRecordingCommand}" HorizontalAlignment="Stretch" Margin="0,10,0,0" MinHeight="38">
                         <StackPanel Orientation="Horizontal">
                             <Ellipse Width="8" Height="8" Fill="{DynamicResource CoralBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />

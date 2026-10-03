@@ -102,25 +102,36 @@ public sealed class TrayService : ITrayService
                 graphics.FillPath(fill, path);
             }
 
-            using (var font = new Font("Segoe UI", size * 0.5f, System.Drawing.FontStyle.Bold, GraphicsUnit.Pixel))
-            using (var ink = new SolidBrush(Color.FromArgb(0x0B, 0x1A, 0x14)))
-            using (var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+            using (var ink = new SolidBrush(Color.FromArgb(0x06, 0x21, 0x17)))
             {
-                graphics.DrawString("M", font, ink, body, format);
+                var barWidth = Math.Max(1.6f, size * 0.1f);
+                var gap = barWidth * 0.65f;
+                float[] scales = [0.42f, 0.74f, 0.3f];
+                var total = barWidth * scales.Length + gap * (scales.Length - 1);
+                var x = body.X + (body.Width - total) / 2f;
+                var midY = body.Y + body.Height / 2f;
+                foreach (var scale in scales)
+                {
+                    var height = Math.Max(barWidth, body.Height * scale);
+                    var bar = new RectangleF(x, midY - height / 2f, barWidth, height);
+                    using var barPath = RoundedRect(bar, barWidth / 2f);
+                    graphics.FillPath(ink, barPath);
+                    x += barWidth + gap;
+                }
             }
 
             var dot = state switch
             {
-                TrayState.Recording => Color.FromArgb(0xFF, 0x4D, 0x5E),
-                TrayState.Processing => Color.FromArgb(0xFC, 0xC8, 0x00),
-                TrayState.Failed => Color.FromArgb(0xFF, 0x99, 0xA4),
+                TrayState.Recording => Color.FromArgb(0xFF, 0x5A, 0x6A),
+                TrayState.Processing => Color.FromArgb(0xE7, 0xC5, 0x6A),
+                TrayState.Failed => Color.FromArgb(0xFF, 0x9A, 0xAB),
                 _ => Color.Empty
             };
             if (dot != Color.Empty)
             {
                 var diameter = size * 0.46f;
                 var dotRect = new RectangleF(size - diameter, size - diameter, diameter, diameter);
-                using var ring = new SolidBrush(Color.FromArgb(0x20, 0x20, 0x20));
+                using var ring = new SolidBrush(Color.FromArgb(0x0E, 0x13, 0x11));
                 using var fill = new SolidBrush(dot);
                 graphics.FillEllipse(ring, dotRect);
                 dotRect.Inflate(-size / 16f, -size / 16f);

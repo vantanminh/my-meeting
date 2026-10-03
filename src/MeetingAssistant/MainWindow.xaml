@@ -8,6 +8,7 @@
         Width="1280" Height="800" MinWidth="760" MinHeight="560"
         WindowStyle="None" ResizeMode="CanResize"
         Background="{DynamicResource InkBrush}"
+        Foreground="{DynamicResource TextBrush}"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         Loaded="Window_Loaded"
         SourceInitialized="Window_SourceInitialized"
@@ -90,12 +91,14 @@
                 <DataTrigger Binding="{Binding IsOnboardingVisible}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
             </Style.Triggers>
         </Style>
-        <Style x:Key="SettingsTabButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
+        <Style x:Key="SettingsTabButton" TargetType="Button" BasedOn="{StaticResource GhostButton}">
             <Setter Property="MinWidth" Value="96" />
-            <Setter Property="MinHeight" Value="38" />
-            <Setter Property="Margin" Value="4,0,4,8" />
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="Margin" Value="3,0,3,8" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
-            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Background" Value="{DynamicResource CardAltBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
             <Style.Triggers>
                 <!-- Tag carries whether this tab's section is the one on screen. -->
                 <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}">
@@ -108,9 +111,10 @@
             </Style.Triggers>
         </Style>
         <Style x:Key="FilterChip" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
-            <Setter Property="FontSize" Value="11" />
-            <Setter Property="Padding" Value="10,6" />
-            <Setter Property="Margin" Value="0,0,6,5" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="Margin" Value="0,0,6,6" />
+            <Setter Property="MinHeight" Value="32" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
                     <Setter Property="Background" Value="{DynamicResource MintDimBrush}" />
@@ -361,10 +365,14 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border Width="23" Height="23" CornerRadius="7" Background="{DynamicResource MintBrush}" Margin="0,0,9,0">
-                    <TextBlock Text="M" Foreground="{DynamicResource BrandInkBrush}" FontWeight="Bold" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Border Width="22" Height="22" CornerRadius="7" Background="{DynamicResource MintBrush}" Margin="0,0,10,0">
+                        <Grid Width="12" Height="12">
+                            <Border Width="2" Height="7" CornerRadius="1" Background="{DynamicResource BrandInkBrush}" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                            <Border Width="2" Height="12" CornerRadius="1" Background="{DynamicResource BrandInkBrush}" HorizontalAlignment="Center" />
+                            <Border Width="2" Height="5" CornerRadius="1" Background="{DynamicResource BrandInkBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                        </Grid>
                     </Border>
-                    <TextBlock Text="Meeting Assistant" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center" />
+                    <TextBlock Text="Meeting Assistant" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
                     <Border Style="{StaticResource RecordingChip}" Margin="10,0,0,0" VerticalAlignment="Center" ToolTip="Recording"><Ellipse Style="{StaticResource PulsingDot}" Width="8" Height="8" Fill="{DynamicResource CoralBrush}" /></Border>
                     <TextBlock x:Name="HeaderPrivateLabel" Text="  ·  PRIVATE BY DEFAULT" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource SubtleBrush}" VerticalAlignment="Center" Margin="16,1,0,0" />
                 </StackPanel>
@@ -391,17 +399,21 @@
                     <ColumnDefinition Width="0.95*" />
                 </Grid.ColumnDefinitions>
                 <StackPanel x:Name="AuthHero" Grid.Column="0" VerticalAlignment="Center" MaxWidth="550">
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,28">
-                        <Border Width="47" Height="47" CornerRadius="14" Background="{DynamicResource MintBrush}" Margin="0,0,14,0">
-                            <TextBlock Text="M" Foreground="{DynamicResource BrandInkBrush}" FontWeight="Bold" FontSize="28" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,32">
+                        <Border Width="48" Height="48" CornerRadius="16" Background="{DynamicResource MintBrush}" Margin="0,0,14,0">
+                            <Grid Width="22" Height="22">
+                                <Border Width="3" Height="12" CornerRadius="1.5" Background="{DynamicResource BrandInkBrush}" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                                <Border Width="3" Height="22" CornerRadius="1.5" Background="{DynamicResource BrandInkBrush}" HorizontalAlignment="Center" />
+                                <Border Width="3" Height="9" CornerRadius="1.5" Background="{DynamicResource BrandInkBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                            </Grid>
                         </Border>
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="MEETING ASSISTANT" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource MintBrush}" />
-                            <TextBlock Text="A quieter memory for busy teams" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,3,0,0" />
+                            <TextBlock Text="A quieter memory for busy teams" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" />
                         </StackPanel>
                     </StackPanel>
-                    <TextBlock Text="Make every meeting&#x0a;come back to you." FontSize="48" FontWeight="SemiBold" LineHeight="56" Foreground="{DynamicResource TextBrush}" />
-                    <TextBlock Text="Record locally. Understand speakers. Leave with the signal — not another page of notes to reconstruct." FontSize="17" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,24,32,34" LineHeight="27" />
+                    <TextBlock Text="Make every meeting&#x0a;come back to you." Style="{StaticResource DisplayTitle}" FontSize="52" LineHeight="58" />
+                    <TextBlock Text="Record locally. Understand speakers. Leave with the signal — not another page of notes to reconstruct." FontSize="17" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,22,40,36" LineHeight="28" />
                     <StackPanel Orientation="Horizontal">
                         <Border Background="{DynamicResource MintDimBrush}" CornerRadius="16" Padding="11,7" Margin="0,0,10,0">
                             <StackPanel Orientation="Horizontal">
@@ -417,8 +429,8 @@
 
                 <Border x:Name="AuthCard" Grid.Column="1" Style="{StaticResource CardStyle}" Padding="38" MaxWidth="480" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <StackPanel>
-                        <TextBlock Text="{Binding AuthHeading}" FontSize="27" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding AuthSubheading}" FontSize="13" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,8,0,26" />
+                        <TextBlock Text="{Binding AuthHeading}" Style="{StaticResource DisplayTitle}" FontSize="30" />
+                        <TextBlock Text="{Binding AuthSubheading}" FontSize="14" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,8,0,28" LineHeight="22" />
 
                         <Grid Style="{StaticResource SignUpOnly}">
                             <StackPanel>
@@ -471,7 +483,7 @@
         <!-- Authenticated application shell -->
         <Grid x:Name="AppSurfaceGrid" Grid.Row="1" Style="{StaticResource AppSurface}">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="SidebarColumn" Width="232" />
+                <ColumnDefinition x:Name="SidebarColumn" Width="248" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
@@ -484,12 +496,16 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <StackPanel x:Name="SidebarBrand" Orientation="Horizontal" Margin="6,0,0,0">
-                        <Border Width="29" Height="29" CornerRadius="9" Background="{DynamicResource MintBrush}" Margin="0,0,10,0">
-                            <TextBlock Text="M" Foreground="{DynamicResource BrandInkBrush}" FontWeight="Bold" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <Border Width="32" Height="32" CornerRadius="10" Background="{DynamicResource MintBrush}" Margin="0,0,12,0">
+                            <Grid Width="14" Height="14">
+                                <Border Width="2" Height="8" CornerRadius="1" Background="{DynamicResource BrandInkBrush}" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                                <Border Width="2" Height="14" CornerRadius="1" Background="{DynamicResource BrandInkBrush}" HorizontalAlignment="Center" />
+                                <Border Width="2" Height="6" CornerRadius="1" Background="{DynamicResource BrandInkBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                            </Grid>
                         </Border>
                         <StackPanel x:Name="SidebarBrandCopy" VerticalAlignment="Center">
-                            <TextBlock Text="Meeting" FontSize="13" FontWeight="SemiBold" />
-                            <TextBlock Text="Assistant" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,1,0,0" />
+                            <TextBlock Text="Meeting" FontSize="14" FontWeight="SemiBold" />
+                            <TextBlock Text="Assistant" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,1,0,0" />
                         </StackPanel>
                     </StackPanel>
 
@@ -526,7 +542,7 @@
                         </Button>
                         <Border Height="1" Background="{DynamicResource DividerBrush}" Margin="11,20,11,19" />
                         <TextBlock x:Name="QuickStartLabel" Text="QUICK START" Style="{StaticResource SectionLabel}" Margin="10,0,0,9" />
-                        <Button x:Name="QuickStartButton" ToolTip="New recording" AutomationProperties.Name="New recording" Style="{StaticResource NavButton}" Command="{Binding OpenSetupCommand}">
+                        <Button x:Name="QuickStartButton" ToolTip="New recording" AutomationProperties.Name="New recording" Style="{StaticResource SidebarActionButton}" Command="{Binding OpenSetupCommand}">
                             <StackPanel Orientation="Horizontal">
                                 <Border Width="24" Height="24" CornerRadius="6" Background="{DynamicResource MintDimBrush}" Margin="0,0,6,0">
                                     <TextBlock Text="&#xE710;" FontFamily="{StaticResource IconFont}" FontSize="12" Foreground="{DynamicResource MintBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -538,7 +554,7 @@
                     </ScrollViewer>
 
                     <StackPanel Grid.Row="3">
-                        <Border x:Name="SidebarStatusCard" Background="{DynamicResource StatusCardBrush}" BorderBrush="{DynamicResource StatusCardBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="12" Margin="0,0,0,14">
+                        <Border x:Name="SidebarStatusCard" Background="{DynamicResource StatusCardBrush}" BorderBrush="{DynamicResource StatusCardBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="14,12" Margin="0,0,0,12">
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal">
                                     <Ellipse Width="7" Height="7" Fill="{DynamicResource MintBrush}" VerticalAlignment="Center" Margin="0,0,7,0" />
@@ -575,8 +591,8 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <StackPanel x:Name="HeaderDetails" Grid.Column="0" Margin="0,0,24,0">
-                            <TextBlock Text="{Binding PageTitle}" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                            <TextBlock x:Name="HeaderDescription" Text="{Binding PageDescription}" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,0" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding PageTitle}" Style="{StaticResource DisplayTitle}" FontSize="22" TextTrimming="CharacterEllipsis" />
+                            <TextBlock x:Name="HeaderDescription" Text="{Binding PageDescription}" FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
                         </StackPanel>
                         <StackPanel x:Name="HeaderActions" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                             <Border Style="{StaticResource RecordingChip}" Background="{DynamicResource CoralDimBrush}" CornerRadius="14" Padding="10,6" Margin="0,0,12,0">
@@ -587,7 +603,7 @@
                                 </StackPanel>
                             </Border>
                             <Grid x:Name="SearchContainer" Style="{StaticResource DashboardOnly}" Margin="0,0,14,0">
-                                <Border x:Name="SearchBorder" Background="{DynamicResource SearchBrush}" BorderThickness="1" CornerRadius="9" Width="220" Height="38">
+                                <Border x:Name="SearchBorder" Background="{DynamicResource SearchBrush}" BorderThickness="1" CornerRadius="12" Width="240" Height="40">
                                     <Border.Style>
                                         <Style TargetType="Border">
                                             <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
@@ -611,7 +627,7 @@
                                     <TextBlock Text="{Binding ProcessingElapsedLabel}" FontSize="11" Foreground="{DynamicResource GoldBrush}" />
                                 </StackPanel>
                             </Button>
-                            <Button x:Name="RecordHeaderButton" ToolTip="New recording (Ctrl + N)" AutomationProperties.Name="New recording" Style="{StaticResource NotRecording}" Command="{Binding OpenSetupCommand}" Height="38" Padding="15,8">
+                            <Button x:Name="RecordHeaderButton" ToolTip="New recording (Ctrl + N)" AutomationProperties.Name="New recording" Style="{StaticResource NotRecording}" Command="{Binding OpenSetupCommand}" Height="40" Padding="16,8">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE710;" FontFamily="{StaticResource IconFont}" FontSize="13" VerticalAlignment="Center" />
                                     <TextBlock x:Name="RecordHeaderLabel" Text="Record" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0" />
@@ -646,7 +662,7 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel>
-                                        <TextBlock FontSize="29" FontWeight="SemiBold" TextWrapping="Wrap">
+                                        <TextBlock Style="{StaticResource DisplayTitle}" FontSize="34" LineHeight="40">
                                             <TextBlock.Text>
                                                 <MultiBinding StringFormat="{}{0}{1}.">
                                                     <Binding Path="GreetingPrefix" />
@@ -654,7 +670,7 @@
                                                 </MultiBinding>
                                             </TextBlock.Text>
                                         </TextBlock>
-                                        <TextBlock Text="Here is the thread of work your conversations are creating." FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,7,0,0" TextWrapping="Wrap" />
+                                        <TextBlock Text="Here is the thread of work your conversations are creating." FontSize="14" Foreground="{DynamicResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" LineHeight="22" />
                                     </StackPanel>
                                     <Border x:Name="LastSyncBadge" Grid.Column="1" HorizontalAlignment="Right" Background="{DynamicResource SyncBadgeBrush}" CornerRadius="19" Padding="13,8" VerticalAlignment="Center" Margin="16,0,0,0">
                                         <StackPanel Orientation="Horizontal">
@@ -664,7 +680,7 @@
                                     </Border>
                                 </Grid>
 
-                                <Border x:Name="DashboardHero" CornerRadius="16" Padding="26" Margin="0,0,0,23" BorderBrush="{DynamicResource HeroRingBrush}" BorderThickness="1">
+                                <Border x:Name="DashboardHero" CornerRadius="20" Padding="28" Margin="0,0,0,22" BorderBrush="{DynamicResource HeroRingBrush}" BorderThickness="1">
                                     <Border.Background>
                                         <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                                             <GradientStop Color="{DynamicResource HeroStartColor}" Offset="0" />
@@ -681,8 +697,8 @@
                                             <Border Background="{DynamicResource HeroBadgeBrush}" CornerRadius="14" Padding="9,5" HorizontalAlignment="Left">
                                                 <TextBlock Text="READY WHEN YOU ARE" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource MintBrush}" />
                                             </Border>
-                                            <TextBlock Text="Keep your attention in the room." FontSize="25" FontWeight="SemiBold" Margin="0,17,0,0" TextWrapping="Wrap" />
-                                            <TextBlock Text="Capture a meeting with mic + system audio, then let Meeting Assistant shape the signal into a transcript and clear next steps." FontSize="13" Foreground="{DynamicResource HeroCopyBrush}" TextWrapping="Wrap" Margin="0,8,0,0" LineHeight="20" />
+                                            <TextBlock Text="Keep your attention in the room." Style="{StaticResource DisplayTitle}" FontSize="28" Margin="0,16,0,0" LineHeight="34" />
+                                            <TextBlock Text="Capture a meeting with mic + system audio, then let Meeting Assistant shape the signal into a transcript and clear next steps." FontSize="14" Foreground="{DynamicResource HeroCopyBrush}" TextWrapping="Wrap" Margin="0,10,0,0" LineHeight="22" />
                                             <Button Style="{StaticResource PrimaryButton}" Command="{Binding OpenSetupCommand}" HorizontalAlignment="Left" Margin="0,22,0,0" Padding="17,10">
                                                 <StackPanel Orientation="Horizontal">
                                                     <TextBlock Text="Start a recording" VerticalAlignment="Center" />
@@ -690,19 +706,42 @@
                                                 </StackPanel>
                                             </Button>
                                         </StackPanel>
-                                        <Grid x:Name="HeroArtwork" Grid.Column="1" Width="220" Height="146" Margin="30,0,8,0" VerticalAlignment="Center">
-                                            <Ellipse Width="135" Height="135" Stroke="{DynamicResource HeroRingBrush}" StrokeThickness="1" Opacity="0.35" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                            <Ellipse Width="96" Height="96" Stroke="{DynamicResource HeroRingBrightBrush}" StrokeThickness="1" Opacity="0.42" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                            <Border Width="63" Height="63" CornerRadius="22" Background="{DynamicResource HeroCoreBrush}" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                <TextBlock Text="&#xE720;" FontFamily="{StaticResource IconFont}" Foreground="{DynamicResource HeroCoreInkBrush}" FontSize="26" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                            </Border>
-                                            <Border Background="{DynamicResource HeroTagBrush}" CornerRadius="9" Padding="8,6" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="17,19,0,0">
-                                                <TextBlock Text="MIC  +  SYSTEM" FontSize="11" Foreground="{DynamicResource HeroTagTextBrush}" />
-                                            </Border>
-                                            <Border Background="{DynamicResource HeroTagAltBrush}" CornerRadius="9" Padding="8,6" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,6,18">
-                                                <TextBlock Text="NO BOT" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource MintBrush}" />
-                                            </Border>
-                                        </Grid>
+                                        <Border x:Name="HeroArtwork" Grid.Column="1" Width="236" Height="156" Margin="28,0,4,0" VerticalAlignment="Center" CornerRadius="18" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource HeroRingBrush}" BorderThickness="1" Padding="16,14">
+                                            <StackPanel VerticalAlignment="Center">
+                                                <Grid Margin="0,0,0,10">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="28" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Border Width="8" Height="8" CornerRadius="4" Background="{DynamicResource MintBrush}" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                                                    <Border Grid.Column="1" Height="8" CornerRadius="4" Background="{DynamicResource MintDimBrush}" VerticalAlignment="Center" />
+                                                </Grid>
+                                                <Grid Margin="0,0,0,10">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="28" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Border Width="8" Height="8" CornerRadius="4" Background="{DynamicResource BlueBrush}" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                                                    <Border Grid.Column="1" Height="8" Width="120" HorizontalAlignment="Left" CornerRadius="4" Background="{DynamicResource BlueDimBrush}" VerticalAlignment="Center" />
+                                                </Grid>
+                                                <Grid Margin="0,0,0,14">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="28" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Border Width="8" Height="8" CornerRadius="4" Background="{DynamicResource GoldBrush}" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                                                    <Border Grid.Column="1" Height="8" Width="86" HorizontalAlignment="Left" CornerRadius="4" Background="{DynamicResource GoldDimBrush}" VerticalAlignment="Center" />
+                                                </Grid>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Border Background="{DynamicResource HeroTagAltBrush}" CornerRadius="10" Padding="8,4" Margin="0,0,6,0">
+                                                        <TextBlock Text="MIC  +  SYSTEM" FontSize="11" Foreground="{DynamicResource MintBrush}" />
+                                                    </Border>
+                                                    <Border Background="{DynamicResource HeroTagBrush}" CornerRadius="10" Padding="8,4">
+                                                        <TextBlock Text="NO BOT" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource HeroTagTextBrush}" />
+                                                    </Border>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Border>
                                     </Grid>
                                 </Border>
 
@@ -712,25 +751,25 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <Border x:Name="MeetingsStatCard" Grid.Column="0" Style="{StaticResource CardStyle}" Margin="0,0,8,0" Padding="17">
+                                    <Border x:Name="MeetingsStatCard" Grid.Column="0" Style="{StaticResource CardStyle}" Margin="0,0,8,0" Padding="20,18">
                                         <StackPanel>
                                             <TextBlock Text="MEETINGS" Style="{StaticResource SectionLabel}" />
-                                            <TextBlock Text="{Binding MeetingCount}" FontSize="27" FontWeight="SemiBold" Margin="0,7,0,0" />
-                                            <TextBlock Text="in your workspace" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" />
+                                            <TextBlock Text="{Binding MeetingCount}" Style="{StaticResource DisplayTitle}" FontSize="32" Margin="0,10,0,0" />
+                                            <TextBlock Text="in your workspace" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" />
                                         </StackPanel>
                                     </Border>
-                                    <Border x:Name="TodayStatCard" Grid.Column="1" Style="{StaticResource CardStyle}" Margin="8,0" Padding="17">
+                                    <Border x:Name="TodayStatCard" Grid.Column="1" Style="{StaticResource CardStyle}" Margin="8,0" Padding="20,18">
                                         <StackPanel>
                                             <TextBlock Text="THIS WEEK" Style="{StaticResource SectionLabel}" />
-                                            <TextBlock Text="{Binding WeekCount}" FontSize="27" FontWeight="SemiBold" Margin="0,7,0,0" />
-                                            <TextBlock Text="recorded this week" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" />
+                                            <TextBlock Text="{Binding WeekCount}" Style="{StaticResource DisplayTitle}" FontSize="32" Margin="0,10,0,0" />
+                                            <TextBlock Text="recorded this week" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" />
                                         </StackPanel>
                                     </Border>
-                                    <Border x:Name="ActionStatCard" Grid.Column="2" Style="{StaticResource CardStyle}" Margin="8,0,0,0" Padding="17">
+                                    <Border x:Name="ActionStatCard" Grid.Column="2" Style="{StaticResource CardStyle}" Margin="8,0,0,0" Padding="20,18">
                                         <StackPanel>
                                             <TextBlock Text="ACTION ITEMS" Style="{StaticResource SectionLabel}" />
-                                            <TextBlock Text="{Binding OpenActionCount}" FontSize="27" FontWeight="SemiBold" Margin="0,7,0,0" />
-                                            <TextBlock Text="still open" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" />
+                                            <TextBlock Text="{Binding OpenActionCount}" Style="{StaticResource DisplayTitle}" FontSize="32" Margin="0,10,0,0" />
+                                            <TextBlock Text="still open" FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" />
                                         </StackPanel>
                                     </Border>
                                 </Grid>
@@ -761,7 +800,7 @@
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="Recent meetings" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,16,5" />
+                                    <TextBlock Text="Recent meetings" Style="{StaticResource DisplayTitle}" FontSize="20" VerticalAlignment="Center" Margin="0,0,16,6" />
                                     <WrapPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center">
                                         <Button Style="{StaticResource GhostButton}" Command="{Binding ScanRecordingsCommand}" Content="Scan recordings" FontSize="11" Margin="0,0,8,5" VerticalAlignment="Center" />
                                         <ItemsControl ItemsSource="{Binding HubFilterOptions}">
@@ -786,31 +825,29 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Button Style="{StaticResource GhostButton}" Command="{Binding DataContext.OpenMeetingCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" AutomationProperties.Name="{Binding Title}" HorizontalContentAlignment="Stretch" Padding="0" Margin="0,0,0,9" Background="Transparent" BorderBrush="Transparent">
-                                                <Border Style="{StaticResource InteractiveCardStyle}" Padding="17,15">
+                                                <Border Style="{StaticResource InteractiveCardStyle}" Padding="16,14">
                                                     <Grid>
                                                         <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="48" />
+                                                            <ColumnDefinition Width="Auto" />
                                                             <ColumnDefinition Width="*" />
                                                             <ColumnDefinition Width="Auto" />
-                                                            <ColumnDefinition Width="28" />
+                                                            <ColumnDefinition Width="24" />
                                                         </Grid.ColumnDefinitions>
-                                                        <Border Width="38" Height="38" CornerRadius="12" Background="{DynamicResource BlueDimBrush}" VerticalAlignment="Center">
-                                                            <TextBlock Text="&#xE720;" FontFamily="{StaticResource IconFont}" FontSize="16" Foreground="{DynamicResource BlueBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                        </Border>
+                                                        <Border Width="3" Height="36" CornerRadius="2" Background="{DynamicResource MintBrush}" VerticalAlignment="Center" Margin="0,0,14,0" />
                                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                            <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                            <WrapPanel Margin="0,5,0,0">
-                                                                <TextBlock Text="{Binding DateLabel, Converter={StaticResource LocalizedTextConverter}}" FontSize="11" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis" />
-                                                                <TextBlock Text="  ·  " FontSize="11" Foreground="{DynamicResource SubtleBrush}" />
-                                                                <TextBlock Text="{Binding DurationLabel}" FontSize="11" Foreground="{DynamicResource MutedBrush}" />
-                                                                <TextBlock Text="  ·  " FontSize="11" Foreground="{DynamicResource SubtleBrush}" />
-                                                                <TextBlock Text="{Binding StatusLabel, Converter={StaticResource LocalizedTextConverter}}" FontSize="11" Foreground="{DynamicResource BlueBrush}" />
-                                                                <TextBlock Text="  ·  " FontSize="11" Foreground="{DynamicResource SubtleBrush}" />
-                                                                <TextBlock Text="{Binding ParticipantCount, StringFormat={}{0} speakers}" FontSize="11" Foreground="{DynamicResource MutedBrush}" />
+                                                            <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                            <WrapPanel Margin="0,6,0,0">
+                                                                <TextBlock Text="{Binding DateLabel, Converter={StaticResource LocalizedTextConverter}}" FontSize="12" Foreground="{DynamicResource MutedBrush}" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock Text="  ·  " FontSize="12" Foreground="{DynamicResource SubtleBrush}" />
+                                                                <TextBlock Text="{Binding DurationLabel}" FontSize="12" Foreground="{DynamicResource MutedBrush}" />
+                                                                <TextBlock Text="  ·  " FontSize="12" Foreground="{DynamicResource SubtleBrush}" />
+                                                                <TextBlock Text="{Binding StatusLabel, Converter={StaticResource LocalizedTextConverter}}" FontSize="12" Foreground="{DynamicResource BlueBrush}" />
+                                                                <TextBlock Text="  ·  " FontSize="12" Foreground="{DynamicResource SubtleBrush}" />
+                                                                <TextBlock Text="{Binding ParticipantCount, StringFormat={}{0} speakers}" FontSize="12" Foreground="{DynamicResource MutedBrush}" />
                                                             </WrapPanel>
                                                         </StackPanel>
-                                                        <Border Grid.Column="2" Background="{DynamicResource MintDimBrush}" CornerRadius="12" Padding="9,5" VerticalAlignment="Center" Margin="12,0,16,0">
-                                                            <TextBlock Text="{Binding SyncStatus, Converter={StaticResource LocalizedTextConverter}}" FontSize="11" Foreground="{DynamicResource MintBrush}" />
+                                                        <Border Grid.Column="2" Background="{DynamicResource MintDimBrush}" CornerRadius="12" Padding="10,5" VerticalAlignment="Center" Margin="14,0,12,0">
+                                                            <TextBlock Text="{Binding SyncStatus, Converter={StaticResource LocalizedTextConverter}}" FontSize="12" Foreground="{DynamicResource MintBrush}" />
                                                         </Border>
                                                         <TextBlock Grid.Column="3" Text="&#xE76C;" FontFamily="{StaticResource IconFont}" FontSize="12" Foreground="{DynamicResource SubtleBrush}" VerticalAlignment="Center" HorizontalAlignment="Center" />
                                                     </Grid>
@@ -860,8 +897,8 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.ColumnSpan="2" Margin="0,0,0,24">
                                 <Button Style="{StaticResource BackButton}" Command="{Binding BackToMeetingsCommand}" Content="Back to meetings" AutomationProperties.Name="Back to meetings" Margin="0,0,0,18" />
-                                <TextBlock Text="Set up your capture" FontSize="28" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                <TextBlock Text="Select the sources you want to remember. This recorder stays on your device and never joins the call." FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,7,0,0" TextWrapping="Wrap" />
+                                <TextBlock Text="Set up your capture" Style="{StaticResource DisplayTitle}" FontSize="32" />
+                                <TextBlock Text="Select the sources you want to remember. This recorder stays on your device and never joins the call." FontSize="14" Foreground="{DynamicResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" LineHeight="22" />
                             </StackPanel>
                             <StackPanel x:Name="SetupLeftColumn" Grid.Row="1" Grid.Column="0" Margin="0,0,12,0">
                                 <Border Style="{StaticResource CardStyle}" Margin="0,0,0,14">
@@ -951,9 +988,9 @@
                                             <TextBlock Text="{Binding RecordingIndicatorLabel}" FontSize="11" Foreground="{DynamicResource CoralBrush}" FontWeight="SemiBold" />
                                         </StackPanel>
                                     </Border>
-                                    <TextBlock Text="{Binding RecordingTitle}" FontSize="26" FontWeight="SemiBold" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="0,21,0,0" />
-                                    <TextBlock Text="{Binding ElapsedLabel}" FontSize="68" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,6,0,0" />
-                                    <TextBlock Text="{Binding RecordingStatus}" FontSize="12" Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="0,2,0,0" />
+                                    <TextBlock Text="{Binding RecordingTitle}" Style="{StaticResource DisplayTitle}" FontSize="28" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,20,0,0" />
+                                    <TextBlock Text="{Binding ElapsedLabel}" FontFamily="{StaticResource DisplayFont}" FontSize="76" FontWeight="Light" HorizontalAlignment="Center" Margin="0,8,0,0" />
+                                    <TextBlock Text="{Binding RecordingStatus}" FontSize="13" Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="0,4,0,0" />
                                     <TextBlock Text="{Binding CaptureProvider}" FontSize="11" Foreground="{DynamicResource BlueBrush}" HorizontalAlignment="Center" Margin="0,6,0,0" />
                                 </StackPanel>
                                 <Border Style="{StaticResource CardStyle}" Padding="25" Margin="0,37,0,16">
@@ -972,7 +1009,7 @@
                                                 <TextBlock Text="MICROPHONE" Style="{StaticResource SectionLabel}" VerticalAlignment="Center" Margin="0,0,12,0" />
                                                 <TextBlock Grid.Column="1" Text="{Binding SelectedMicrophone}" ToolTip="{Binding SelectedMicrophone}" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="11" Foreground="{DynamicResource SubtleBrush}" TextTrimming="CharacterEllipsis" />
                                             </Grid>
-                                            <ProgressBar Value="{Binding MicrophoneLevel, Mode=OneWay}" Maximum="1" Height="10" Margin="0,13,0,0" />
+                                            <ProgressBar Value="{Binding MicrophoneLevel, Mode=OneWay}" Maximum="1" Height="8" Margin="0,14,0,0" />
                                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                                 <Ellipse Width="6" Height="6" Fill="{DynamicResource MintBrush}" VerticalAlignment="Center" Margin="0,0,6,0" />
                                                 <TextBlock Text="Your voice is being captured" FontSize="11" Foreground="{DynamicResource MutedBrush}" />
@@ -987,7 +1024,7 @@
                                                 <TextBlock Text="SYSTEM AUDIO" Style="{StaticResource SectionLabel}" VerticalAlignment="Center" Margin="0,0,12,0" />
                                                 <TextBlock Grid.Column="1" Text="{Binding SelectedSystemAudio}" ToolTip="{Binding SelectedSystemAudio}" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="11" Foreground="{DynamicResource SubtleBrush}" TextTrimming="CharacterEllipsis" />
                                             </Grid>
-                                            <ProgressBar Value="{Binding SystemAudioLevel, Mode=OneWay}" Maximum="1" Height="10" Margin="0,13,0,0" Foreground="{DynamicResource BlueBrush}" />
+                                            <ProgressBar Value="{Binding SystemAudioLevel, Mode=OneWay}" Maximum="1" Height="8" Margin="0,14,0,0" Foreground="{DynamicResource BlueBrush}" />
                                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                                 <Ellipse Width="6" Height="6" Fill="{DynamicResource BlueBrush}" VerticalAlignment="Center" Margin="0,0,6,0" />
                                                 <TextBlock Text="Meeting audio is being captured" FontSize="11" Foreground="{DynamicResource MutedBrush}" />
@@ -1009,13 +1046,13 @@
                                     </Grid>
                                 </Border>
                                 <StackPanel x:Name="RecordingActions" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,30,0,0">
-                                    <Button x:Name="PauseRecordingButton" Style="{StaticResource PauseOnly}" Command="{Binding PauseRecordingCommand}" Height="44" Width="132" Margin="0,0,8,0">
+                                    <Button x:Name="PauseRecordingButton" Style="{StaticResource PauseOnly}" Command="{Binding PauseRecordingCommand}" Height="44" Width="148" Margin="0,0,8,0">
                                         <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE769;" FontFamily="{StaticResource IconFont}" FontSize="13" VerticalAlignment="Center" Margin="0,0,8,0" /><TextBlock Text="Pause" /></StackPanel>
                                     </Button>
-                                    <Button x:Name="ResumeRecordingButton" Style="{StaticResource ResumeOnly}" Command="{Binding ResumeRecordingCommand}" Height="44" Width="132" Margin="8,0,8,0">
+                                    <Button x:Name="ResumeRecordingButton" Style="{StaticResource ResumeOnly}" Command="{Binding ResumeRecordingCommand}" Height="44" Width="148" Margin="8,0,8,0">
                                         <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE768;" FontFamily="{StaticResource IconFont}" FontSize="13" VerticalAlignment="Center" Margin="0,0,8,0" /><TextBlock Text="Resume" /></StackPanel>
                                     </Button>
-                                    <Button x:Name="StopRecordingButton" Style="{StaticResource DangerButton}" Command="{Binding StopRecordingCommand}" Height="44" Width="132" Margin="8,0,0,0">
+                                    <Button x:Name="StopRecordingButton" Style="{StaticResource DangerButton}" Command="{Binding StopRecordingCommand}" Height="44" Width="156" Margin="8,0,0,0">
                                         <StackPanel Orientation="Horizontal"><Ellipse Width="8" Height="8" Fill="{DynamicResource CoralBrush}" VerticalAlignment="Center" Margin="0,0,8,0" /><TextBlock Text="Stop &amp; process" /></StackPanel>
                                     </Button>
                                 </StackPanel>
@@ -1029,7 +1066,7 @@
                                 <Border Width="76" Height="76" CornerRadius="27" Background="{DynamicResource MintDimBrush}" HorizontalAlignment="Center">
                                     <TextBlock Text="✦" FontSize="37" Foreground="{DynamicResource MintBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Border>
-                                <TextBlock Text="Making sense of your meeting" FontSize="28" FontWeight="SemiBold" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="0,24,0,0" />
+                                <TextBlock Text="Making sense of your meeting" Style="{StaticResource DisplayTitle}" FontSize="32" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,24,0,0" />
                                 <TextBlock Text="{Binding ProcessingMessage}" FontSize="13" Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="0,8,0,0" />
                                 <Border Style="{StaticResource CardStyle}" Margin="0,30,0,0" Padding="27">
                                     <StackPanel>
@@ -1169,7 +1206,7 @@
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel>
                                             <TextBlock Text="MEETING REVIEW" Style="{StaticResource SectionLabel}" Foreground="{DynamicResource BlueBrush}" />
-                                             <TextBox Text="{Binding CurrentMeeting.Title, UpdateSourceTrigger=PropertyChanged}" Background="Transparent" BorderThickness="0" Padding="0" FontSize="25" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,5" />
+                                             <TextBox Text="{Binding CurrentMeeting.Title, UpdateSourceTrigger=PropertyChanged}" Background="Transparent" BorderThickness="0" Padding="0" FontFamily="{StaticResource DisplayFont}" FontSize="28" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,6" />
                                             <WrapPanel>
                                                 <TextBlock Text="{Binding CurrentMeeting.DateLabel}" FontSize="11" Foreground="{DynamicResource MutedBrush}" />
                                                 <TextBlock Text="  ·  " FontSize="11" Foreground="{DynamicResource SubtleBrush}" />
@@ -1203,7 +1240,7 @@
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Text="Transcript" FontSize="18" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="Transcript" Style="{StaticResource DisplayTitle}" FontSize="20" TextTrimming="CharacterEllipsis" />
                                             <TextBlock Grid.Column="1" Text="{Binding FilteredTranscript.Count, StringFormat={}{0} speaker turns}" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="11" Foreground="{DynamicResource SubtleBrush}" Margin="12,0,0,0" />
                                         </Grid>
                                         <Grid Margin="0,0,0,14">
@@ -1252,7 +1289,7 @@
                                                     </StackPanel.Style>
                                                     <TextBlock Text="{Binding ActiveCueSpeaker}" FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap" />
                                                     <TextBlock Text="{Binding ActiveCueRange}" FontSize="11" Foreground="{DynamicResource BlueBrush}" Margin="0,3,0,0" />
-                                                    <TextBlock Text="{Binding ActiveCueText}" FontSize="15" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                                    <TextBlock Text="{Binding ActiveCueText}" FontSize="18" TextWrapping="Wrap" LineHeight="26" Margin="0,8,0,0" />
                                                 </StackPanel>
                                                 <WrapPanel Margin="0,10,0,0">
                                                     <Button Style="{StaticResource SecondaryButton}" Command="{Binding ReplayCueCommand}" Content="Replay line" FontSize="11" Margin="0,0,6,0" />
@@ -1274,10 +1311,11 @@
                                             </ListView.ItemContainerStyle>
                                             <ListView.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Border Padding="15" CornerRadius="8" BorderThickness="1">
+                                                    <Border Padding="16,14" CornerRadius="14" BorderThickness="1">
                                                         <Border.Style>
                                                             <Style TargetType="Border" BasedOn="{StaticResource CardStyle}">
-                                                                <Setter Property="Padding" Value="15" />
+                                                                <Setter Property="Padding" Value="16,14" />
+                                                                <Setter Property="CornerRadius" Value="14" />
                                                                 <Style.Triggers>
                                                                     <DataTrigger Value="True">
                                                                         <DataTrigger.Binding>
@@ -1286,21 +1324,18 @@
                                                                                 <Binding Path="DataContext.ActiveSegmentId" RelativeSource="{RelativeSource AncestorType=ListView}" />
                                                                             </MultiBinding>
                                                                         </DataTrigger.Binding>
-                                                                        <Setter Property="BorderBrush" Value="{DynamicResource BlueBrush}" />
-                                                                        <Setter Property="Background" Value="{DynamicResource BlueDimBrush}" />
+                                                                        <Setter Property="BorderBrush" Value="{DynamicResource MintBrush}" />
+                                                                        <Setter Property="Background" Value="{DynamicResource MintDimBrush}" />
                                                                     </DataTrigger>
                                                                 </Style.Triggers>
                                                             </Style>
                                                         </Border.Style>
                                                         <Grid>
-                                                            <Grid.ColumnDefinitions><ColumnDefinition Width="48" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                            <Border Width="34" Height="34" CornerRadius="11" Background="{DynamicResource TranscriptIconBrush}" VerticalAlignment="Top">
-                                                                <TextBlock Text="&#xE77B;" FontFamily="{StaticResource IconFont}" FontSize="14" Foreground="{DynamicResource MintBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                            </Border>
-                                                            <StackPanel Grid.Column="1" Width="118" Margin="0,1,12,0">
-                                                                <TextBlock Text="{Binding SpeakerName}" FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                                                <TextBlock Text="{Binding Timestamp}" Style="{StaticResource TimestampLink}" FontSize="11" Margin="0,5,0,0" MouseLeftButtonUp="TranscriptSegment_Click" />
-                                                                <WrapPanel Margin="-5,6,0,0">
+                                                            <Grid.ColumnDefinitions><ColumnDefinition Width="148" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                            <StackPanel Margin="0,2,14,0">
+                                                                <TextBlock Text="{Binding SpeakerName}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                                <TextBlock Text="{Binding Timestamp}" Style="{StaticResource TimestampLink}" FontSize="12" Margin="0,4,0,0" MouseLeftButtonUp="TranscriptSegment_Click" />
+                                                                <WrapPanel Margin="-4,8,0,0">
                                                                     <Button Style="{StaticResource GhostButton}" Command="{Binding DataContext.SplitTurnCommand, RelativeSource={RelativeSource AncestorType=ListView}}" CommandParameter="{Binding}" Content="Split" ToolTip="Split turn" AutomationProperties.Name="Split turn" FontSize="11" Padding="5,3" MinHeight="26" Margin="0,0,2,2" />
                                                                     <Button Style="{StaticResource GhostButton}" Command="{Binding DataContext.MergeTurnCommand, RelativeSource={RelativeSource AncestorType=ListView}}" CommandParameter="{Binding}" Content="Merge" ToolTip="Merge with previous" AutomationProperties.Name="Merge with previous" FontSize="11" Padding="5,3" MinHeight="26" Margin="0,0,2,2" />
                                                                     <Button Style="{StaticResource GhostButton}" Command="{Binding DataContext.InsertTurnCommand, RelativeSource={RelativeSource AncestorType=ListView}}" CommandParameter="{Binding}" Content="&#xE710;" FontFamily="{StaticResource IconFont}" ToolTip="Insert turn" AutomationProperties.Name="Insert turn" FontSize="11" Padding="5,3" MinHeight="26" Margin="0,0,2,2" />
@@ -1308,8 +1343,8 @@
                                                                     <CheckBox x:Name="EditLineToggle" Content="Edit line" FontSize="11" Margin="0,0,0,2" VerticalAlignment="Center" />
                                                                 </WrapPanel>
                                                             </StackPanel>
-                                                            <Grid Grid.Column="2">
-                                                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Cursor="Hand" ToolTip="Play this line" MouseLeftButtonUp="TranscriptSegment_Click" MinHeight="38" FontSize="12">
+                                                            <Grid Grid.Column="1">
+                                                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Cursor="Hand" ToolTip="Play this line" MouseLeftButtonUp="TranscriptSegment_Click" MinHeight="44" FontSize="14" LineHeight="22">
                                                                     <TextBlock.Style>
                                                                         <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
                                                                             <Setter Property="Foreground" Value="{DynamicResource EditorTextBrush}" />
@@ -1321,7 +1356,7 @@
                                                                         </Style>
                                                                     </TextBlock.Style>
                                                                 </TextBlock>
-                                                                <TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" AcceptsReturn="True" Background="Transparent" BorderThickness="0" Padding="0" FontSize="12" MinHeight="38">
+                                                                <TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" AcceptsReturn="True" Background="Transparent" BorderThickness="0" Padding="0" FontSize="14" MinHeight="44">
                                                                     <TextBox.Style>
                                                                         <Style TargetType="TextBox">
                                                                             <Setter Property="Foreground" Value="{DynamicResource EditorTextBrush}" />
@@ -1347,7 +1382,7 @@
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Text="Summary" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="Summary" Style="{StaticResource DisplayTitle}" FontSize="20" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                                             <Button Grid.Column="1" Style="{StaticResource SecondaryButton}" Command="{Binding ResummarizeCommand}" Content="Refresh summary" FontSize="11" Padding="10,6" HorizontalAlignment="Right" Margin="12,0,0,0" />
                                         </Grid>
                                         <TextBlock Text="{Binding MeetingNotesSummary}" Style="{StaticResource MeetingNotesDigestSurface}" FontSize="12" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,12" />
@@ -1577,8 +1612,8 @@
                                         <RowDefinition Height="0" />
                                     </Grid.RowDefinitions>
                                     <StackPanel>
-                                        <TextBlock Text="The people in your conversations" FontSize="26" FontWeight="SemiBold" />
-                                        <TextBlock Text="Everyone you have named. Renaming a person here updates every meeting they are in." FontSize="13" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,7,0,0" />
+                                        <TextBlock Text="The people in your conversations" Style="{StaticResource DisplayTitle}" FontSize="32" />
+                                        <TextBlock Text="Everyone you have named. Renaming a person here updates every meeting they are in." FontSize="14" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,8,0,0" LineHeight="22" />
                                     </StackPanel>
                                     <WrapPanel x:Name="SpeakersSaveButton" HorizontalAlignment="Right" VerticalAlignment="Center">
                                         <Button Style="{StaticResource GhostButton}" Command="{Binding MergeSelectedSpeakersCommand}" Content="Merge first two" FontSize="12" Margin="0,0,8,6" />
@@ -1632,8 +1667,8 @@
                         <!-- Next steps -->
                         <Grid Style="{StaticResource ActionsSurface}">
                             <StackPanel>
-                                <TextBlock Text="Open action items" FontSize="26" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                <TextBlock Text="Work left across your meetings, without opening every transcript." FontSize="13" Foreground="{DynamicResource MutedBrush}" Margin="0,7,0,18" TextWrapping="Wrap" />
+                                <TextBlock Text="Open action items" Style="{StaticResource DisplayTitle}" FontSize="32" />
+                                <TextBlock Text="Work left across your meetings, without opening every transcript." FontSize="14" Foreground="{DynamicResource MutedBrush}" Margin="0,8,0,20" TextWrapping="Wrap" LineHeight="22" />
                                 <ItemsControl ItemsSource="{Binding InboxActions}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
@@ -1644,7 +1679,7 @@
                                                         <Border Width="20" Height="20" CornerRadius="5" BorderBrush="{DynamicResource HoverBorderBrush}" BorderThickness="1.5" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="0,2,0,0" />
                                                         <StackPanel Grid.Column="1">
                                                             <TextBlock Text="{Binding Meeting.Title}" FontSize="11" Foreground="{DynamicResource SubtleBrush}" TextTrimming="CharacterEllipsis" />
-                                                            <TextBlock Text="{Binding Item.Text}" FontSize="13" FontWeight="SemiBold" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                                            <TextBlock Text="{Binding Item.Text}" FontSize="15" FontWeight="SemiBold" Margin="0,5,0,0" TextWrapping="Wrap" LineHeight="22" />
                                                             <WrapPanel Margin="0,6,0,0">
                                                                 <TextBlock Text="{Binding Item.Owner}" FontSize="11" Foreground="{DynamicResource BlueBrush}" Margin="0,0,12,0" />
                                                                 <TextBlock Text="{Binding Item.Due}" FontSize="11" Foreground="{DynamicResource SubtleBrush}" />
@@ -1854,7 +1889,7 @@
                     </Grid>
                 </ScrollViewer>
 
-                <Border x:Name="StatusBar" Grid.Row="2" Background="{DynamicResource SidebarBrush}" BorderBrush="{DynamicResource HeaderBorderBrush}" BorderThickness="0,1,0,0" Padding="16,0">
+                <Border x:Name="StatusBar" Grid.Row="2" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource HeaderBorderBrush}" BorderThickness="0,1,0,0" Padding="20,0">
                     <Grid VerticalAlignment="Center">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -1867,7 +1902,7 @@
                     </Grid>
                 </Border>
 
-                <Border x:Name="ToastBorder" Grid.Row="1" Style="{StaticResource ToastSurface}" Background="{DynamicResource ToastBrush}" BorderBrush="{DynamicResource ToastBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="15,10" HorizontalAlignment="Right" VerticalAlignment="Bottom" MaxWidth="380" Margin="0,0,32,16">
+                <Border x:Name="ToastBorder" Grid.Row="1" Style="{StaticResource ToastSurface}" Background="{DynamicResource ToastBrush}" BorderBrush="{DynamicResource ToastBorderBrush}" BorderThickness="1" CornerRadius="14" Padding="16,12" HorizontalAlignment="Right" VerticalAlignment="Bottom" MaxWidth="400" Margin="0,0,32,20">
                 <Border.Effect>
                     <DropShadowEffect BlurRadius="16" ShadowDepth="2" Opacity="0.25" />
                 </Border.Effect>
@@ -1885,7 +1920,7 @@
                         Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="18">
                     <StackPanel>
                         <TextBlock Text="WELCOME" Style="{StaticResource SectionLabel}" Foreground="{DynamicResource MintBrush}" />
-                        <TextBlock Text="Three things before your first recording" FontSize="22" FontWeight="SemiBold" Margin="0,10,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="Three things before your first recording" Style="{StaticResource DisplayTitle}" FontSize="26" Margin="0,10,0,0" />
                         <TextBlock Text="1. Capture stays on this device until you sync." FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,16,0,0" TextWrapping="Wrap" />
                         <TextBlock Text="2. Test your microphone so you know both sources work." FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
                         <TextBlock Text="3. Add an AssemblyAI key for transcription and an OpenAI key for meeting notes." FontSize="12" Foreground="{DynamicResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
@@ -1911,7 +1946,7 @@
                                 <TextBlock Text="{Binding UpdateVersionDescription}" FontSize="11" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" />
                             </StackPanel>
                         </Grid>
-                        <TextBlock Text="Updating Meeting Assistant" FontSize="27" FontWeight="SemiBold" Margin="0,26,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="Updating Meeting Assistant" Style="{StaticResource DisplayTitle}" FontSize="28" Margin="0,24,0,0" />
                         <TextBlock Text="A new version is being installed automatically. You can keep watching here while we finish." FontSize="12" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" LineHeight="19" Margin="0,7,0,0" />
 
                         <Border Background="{DynamicResource HeroEndBrush}" BorderBrush="{DynamicResource HeroRingBrush}" BorderThickness="1" CornerRadius="13" Padding="16" Margin="0,24,0,0">
